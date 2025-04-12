@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { StructuredAnswer, Source } from '@/types/conversation';
+import { app as answerEngineGraph, AgentState } from '@/lib/llm/orchestrator'; // Import AgentState and rename app
+import { HumanMessage } from "@langchain/core/messages"; // Import HumanMessage
 
 interface RequestBody {
   userId: string;
@@ -18,24 +20,27 @@ export async function POST(req: NextRequest) {
 
     console.log(`Received query from user ${userId} (session: ${sessionId || 'N/A'}): ${query}`);
 
-    // --- Placeholder Logic ---
-    // TODO:
-    // 1. Fetch user profile/goals from Supabase using userId.
-    // 2. Instantiate and invoke the LangGraph orchestrator (Step 1.7).
-    // 3. Format the response.
-
-    const placeholderAnswer: StructuredAnswer = {
-      text: `Placeholder answer for query: "${query}" from user ${userId}. Session: ${sessionId || 'N/A'}`,
+    // Prepare the initial state for the LangGraph orchestrator
+    // The graph expects messages in a specific format
+    const initialState: Partial<AgentState> = {
+      messages: [new HumanMessage(query)], // Wrap query in HumanMessage
+      userId,
+      // sessionId is not directly part of AgentState, but could be passed if needed by nodes
+      // For now, we rely on userId being sufficient for context fetching within nodes.
     };
 
-    const placeholderSources: Source[] = [
-      { url: 'http://example.com/source1', title: 'Example Source 1' },
-    ];
-    // --- End Placeholder Logic ---
+    // We are using 'as any' here temporarily due to persistent LangGraph typing issues
+    // The actual final state type should align with OrchestratorState
+    const finalState: any = await answerEngineGraph.invoke(initialState as any); // Use 'any' for result due to LangGraph type complexity
+
+    // Extract the final answer and sources from the graph's state
+    // Assuming the final state structure aligns with AgentState
+    const finalAnswer: StructuredAnswer = finalState.structuredAnswer || { text: 'Sorry, I could not generate an answer.' };
+    const finalSources: Source[] = finalState.knowledgeResponse?.sources || [];
 
     return NextResponse.json({
-      answer: placeholderAnswer,
-      sources: placeholderSources,
+      answer: finalAnswer,
+      sources: finalSources,
     });
 
   } catch (error) {

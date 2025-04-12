@@ -13,7 +13,7 @@ import { StructuredAnswer, Source } from "@/types/conversation"; // Import exist
 // import { redisClient } from '../cache/redis';
 
 // Define the state structure for the graph
-interface AgentState {
+export interface AgentState { // Add export keyword
   messages: BaseMessage[]; // Use BaseMessage to allow HumanMessage and AIMessage
   userId?: string; // Optional: Add if needed for context
   conversationId?: string; // Optional: Add if needed for context
