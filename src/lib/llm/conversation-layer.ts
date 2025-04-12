@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
-import { getConversationHistory, saveConversationTurn } from '../vector-db/pinecone';
-import { ReasoningOutput } from './reasoning-layer';
+import { getConversationHistory, saveConversationTurn } from '../vector-db/pinecone.js';
+import { ReasoningOutput } from './reasoning-layer.js';
 import { StructuredAnswer } from '@/types/conversation';
 
 // Ensure environment variables are set

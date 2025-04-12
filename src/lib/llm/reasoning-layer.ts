@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { UserProfile, UserGoal } from '@/types/user';
-import { FactualInformation } from './knowledge-layer';
+import { FactualInformation } from './knowledge-layer.js';
 
 // Ensure environment variables are set
 const openaiApiKey = process.env.OPENAI_API_KEY;
