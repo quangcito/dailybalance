@@ -1,17 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-// TODO: Import StructuredAnswer and Source types from @/types/conversation
-
-// Placeholder types - will be replaced by imports
-type StructuredAnswer = {
-  text: string;
-  // Add other fields as needed based on LLM output structure
-};
-
-type Source = {
-  url: string;
-  title: string;
-  // Add other fields as needed
-};
+import { StructuredAnswer, Source } from '@/types/conversation';
 
 interface RequestBody {
   userId: string;
