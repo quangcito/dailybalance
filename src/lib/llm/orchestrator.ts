@@ -7,8 +7,16 @@ import { StructuredAnswer, Source } from "@/types/conversation"; // Import exist
 import { getFactualInformation, FactualInformation } from './knowledge-layer.ts';
 import { generatePersonalizedInsights, ReasoningOutput } from './reasoning-layer.ts';
 import { generateFinalResponse } from './conversation-layer.ts';
-import { UserProfile, InteractionLog } from '@/types/user'; // Import user types
-import { getUserProfile, logInteraction } from '../db/supabase'; // Import fetch and log functions
+import { UserProfile, InteractionLog } from '@/types/user';
+import { FoodLog } from '@/types/nutrition';
+import { ExerciseLog } from '@/types/exercise';
+import {
+  getUserProfile,
+  logInteraction,
+  getDailyFoodLogs,
+  getDailyExerciseLogs,
+  getDailyInteractionLogs,
+} from '../db/supabase'; // Import fetch and log functions
 import { calculateBMR, calculateTDEE } from '../utils/calculations'; // Import calculation functions
 
 // TODO: Import functions to fetch user profile/goals if needed - DONE
@@ -20,6 +28,7 @@ export interface AgentState { // Add export keyword
   messages: BaseMessage[]; // Use BaseMessage to allow HumanMessage and AIMessage
   userId?: string; // Optional: Add if needed for context
   conversationId?: string; // Optional: Add if needed for context
+  targetDate?: string; // NEW: Target date for context (YYYY-MM-DD)
   knowledgeResponse?: FactualInformation; // Use type from knowledge-layer
   reasoningResponse?: ReasoningOutput | null; // Use type from reasoning-layer
   structuredAnswer?: StructuredAnswer; // Final output
@@ -28,6 +37,10 @@ export interface AgentState { // Add export keyword
   userProfile?: UserProfile | null;
   // userGoals?: UserGoal[]; // Removed as goals are now part of UserProfile
   needsPersonalization?: boolean; // Flag from analysis step
+  // Add fields for daily context logs
+  dailyFoodLogs?: FoodLog[];
+  dailyExerciseLogs?: ExerciseLog[];
+  dailyInteractionLogs?: InteractionLog[];
 }
 
 // --- Define Nodes ---
@@ -51,6 +64,100 @@ async function processInput(state: AgentState): Promise<{
     structuredAnswer: undefined,
   };
 }
+
+// --- NEW NODE: Identify Target Date ---
+async function identifyTargetDate(state: AgentState): Promise<{
+    current_step: string;
+    targetDate: string;
+}> {
+    console.log("--- Step: Identify Target Date ---");
+    const lastMessage = state.messages[state.messages.length - 1];
+    const query = typeof lastMessage.content === 'string' ? lastMessage.content : "";
+
+    // Get current date in YYYY-MM-DD format
+    const today = new Date().toISOString().split('T')[0];
+    let targetDate = today; // Default to today
+
+    try {
+        // Use a simple LLM call to extract the date
+        // Ensure OPENAI_API_KEY is set in environment
+        const dateExtractionModel = new ChatOpenAI({ modelName: "gpt-3.5-turbo", temperature: 0 });
+        const prompt = `Today's date is ${today}. Analyze the following user query and extract the specific date the user is asking about. Respond ONLY with the date in YYYY-MM-DD format. If no specific date is mentioned or implied other than today, respond with "${today}". Query: "${query}"`;
+
+        const response = await dateExtractionModel.invoke(prompt);
+        const extractedDate = response.content.toString().trim();
+
+        // Basic validation for YYYY-MM-DD format
+        if (/^\d{4}-\d{2}-\d{2}$/.test(extractedDate)) {
+            targetDate = extractedDate;
+            console.log(`Extracted target date: ${targetDate}`);
+        } else {
+            console.log(`Could not extract a valid date, defaulting to today: ${today}`);
+            targetDate = today; // Default to today if format is wrong
+        }
+    } catch (error) {
+        console.error("Error during date extraction LLM call:", error);
+        console.log(`Defaulting to today due to error: ${today}`);
+        targetDate = today; // Default to today on error
+    }
+
+    return { current_step: "identifyTargetDate", targetDate };
+}
+
+// --- NEW NODE: Fetch Daily Context ---
+async function fetchDailyContext(state: AgentState): Promise<{
+    current_step: string;
+    dailyFoodLogs: FoodLog[];
+    dailyExerciseLogs: ExerciseLog[];
+    dailyInteractionLogs: InteractionLog[];
+}> {
+    console.log("--- Step: Fetch Daily Context ---");
+    const userId = state.userId;
+    // Default to today if targetDate is somehow missing
+    const targetDate = state.targetDate ?? new Date().toISOString().split('T')[0];
+
+    if (!userId) {
+        console.log("No userId provided, skipping daily context fetch.");
+        return {
+            current_step: "fetchDailyContext",
+            dailyFoodLogs: [],
+            dailyExerciseLogs: [],
+            dailyInteractionLogs: [],
+        };
+    }
+
+    console.log(`Fetching daily logs for userId: ${userId}, date: ${targetDate}`);
+    try {
+        // Fetch all daily logs concurrently
+        const [foodLogs, exerciseLogs, interactionLogs] = await Promise.all([
+            getDailyFoodLogs(userId, targetDate),
+            getDailyExerciseLogs(userId, targetDate),
+            getDailyInteractionLogs(userId, targetDate),
+        ]);
+
+        console.log(`Fetched Food Logs: ${foodLogs.length}`);
+        console.log(`Fetched Exercise Logs: ${exerciseLogs.length}`);
+        console.log(`Fetched Interaction Logs: ${interactionLogs.length}`);
+
+        return {
+            current_step: "fetchDailyContext",
+            dailyFoodLogs: foodLogs,
+            dailyExerciseLogs: exerciseLogs,
+            dailyInteractionLogs: interactionLogs,
+        };
+    } catch (error) {
+        console.error("Error fetching daily context logs:", error);
+        // Return empty arrays on error
+        return {
+            current_step: "fetchDailyContext",
+            dailyFoodLogs: [],
+            dailyExerciseLogs: [],
+            dailyInteractionLogs: [],
+        };
+    }
+}
+
+
 
 // --- NEW NODE: Analyze Query for Personalization ---
 // Simple keyword-based check for now
@@ -134,8 +241,13 @@ async function runReasoningLayer(state: AgentState): Promise<{
   // UserProfile and UserGoals are now potentially populated in the state
   const userProfile = state.userProfile ?? null;
   // const userGoals = state.userGoals ?? []; // Goals are now in userProfile
-  // TODO: Determine actual time context (e.g., based on server time or user input)
-  const timeContext = "Midday"; // Placeholder - Keep for now
+  // TODO: Determine actual time context (e.g., based on server time or user input) - This is different from targetDate
+  const timeContext = "Midday"; // Placeholder for time-of-day context
+  const targetDate = state.targetDate ?? new Date().toISOString().split('T')[0]; // Use identified date or default
+  // TODO: Pass daily logs to generatePersonalizedInsights
+  const dailyFoodLogs = state.dailyFoodLogs ?? [];
+  const dailyExerciseLogs = state.dailyExerciseLogs ?? [];
+  const dailyInteractionLogs = state.dailyInteractionLogs ?? [];
 
   if (!knowledgeInfo) {
       console.warn("Reasoning Layer: Knowledge information is missing.");
@@ -147,9 +259,12 @@ async function runReasoningLayer(state: AgentState): Promise<{
       query,
       knowledgeInfo,
       userProfile,
-      // userGoals, // Removed, goals are in profile
-      timeContext
+      timeContext,
+      dailyFoodLogs, // Pass daily logs from state
+      dailyExerciseLogs,
+      dailyInteractionLogs
   );
+
 
   console.log("Reasoning Response:", reasoningResponse);
   return { current_step: "runReasoningLayer", reasoningResponse };
@@ -270,6 +385,24 @@ const graphArgs: StateGraphArgs<AgentState> = {
     needsPersonalization: {
        value: (x?: boolean, y?: boolean) => y ?? x,
        default: () => false,
+    }, // Added comma
+    // Removed extra closing brace
+    targetDate: {
+      value: (x?: string, y?: string) => y ?? x,
+      default: () => undefined,
+    },
+    // Add channels for daily context logs
+    dailyFoodLogs: {
+      value: (x?: FoodLog[], y?: FoodLog[]) => y ?? x,
+      default: () => [],
+    },
+    dailyExerciseLogs: {
+      value: (x?: ExerciseLog[], y?: ExerciseLog[]) => y ?? x,
+      default: () => [],
+    },
+    dailyInteractionLogs: {
+      value: (x?: InteractionLog[], y?: InteractionLog[]) => y ?? x,
+      default: () => [],
     }
   },
 };
@@ -279,8 +412,10 @@ const workflow = new StateGraph<AgentState>(graphArgs);
 
 // Add nodes (using 'as any' to bypass type errors for now)
 workflow.addNode("processInput", processInput as any);
-workflow.addNode("analyzeQueryForPersonalization", analyzeQueryForPersonalization as any); // New node
-workflow.addNode("fetchUserData", fetchUserData as any); // New node
+workflow.addNode("identifyTargetDate", identifyTargetDate as any);
+workflow.addNode("fetchDailyContext", fetchDailyContext as any); // NEW node
+workflow.addNode("analyzeQueryForPersonalization", analyzeQueryForPersonalization as any);
+workflow.addNode("fetchUserData", fetchUserData as any);
 workflow.addNode("runKnowledgeLayer", runKnowledgeLayer as any);
 workflow.addNode("runReasoningLayer", runReasoningLayer as any);
 workflow.addNode("runConversationLayer", runConversationLayer as any);
@@ -289,12 +424,14 @@ workflow.addNode("runConversationLayer", runConversationLayer as any);
 workflow.setEntryPoint("processInput" as any);
 
 // Add edges (without type assertions for now)
-workflow.addEdge("processInput" as any, "analyzeQueryForPersonalization" as any); // Input -> Analyze
+workflow.addEdge("processInput" as any, "identifyTargetDate" as any); // Input -> Identify Date
+workflow.addEdge("identifyTargetDate" as any, "fetchDailyContext" as any); // Identify Date -> Fetch Daily Context
+workflow.addEdge("fetchDailyContext" as any, "analyzeQueryForPersonalization" as any); // Fetch Daily Context -> Analyze
 
 // Conditional edge after analysis
 workflow.addConditionalEdges(
   "analyzeQueryForPersonalization" as any,
-  decideIfFetchUserData, // Use the new decision function
+  decideIfFetchUserData, // Use the decision function
   {
     fetchUserData: "fetchUserData" as any, // If yes, fetch data
     runKnowledgeLayer: "runKnowledgeLayer" as any, // If no, skip to knowledge
@@ -302,6 +439,7 @@ workflow.addConditionalEdges(
 );
 
 workflow.addEdge("fetchUserData" as any, "runKnowledgeLayer" as any); // After fetch -> Knowledge
+// Note: runKnowledgeLayer edge remains the same (doesn't directly depend on date yet)
 workflow.addEdge("runKnowledgeLayer" as any, "runReasoningLayer" as any); // Knowledge -> Reasoning
 workflow.addEdge("runReasoningLayer" as any, "runConversationLayer" as any); // Reasoning -> Conversation
 workflow.addEdge("runConversationLayer" as any, END); // Conversation -> End
