@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
       messages: [new HumanMessage(query)], // Wrap query in HumanMessage
       userId,
       guestProfileData, // Pass guest profile data to the graph state
-      // sessionId is not directly part of AgentState, handled separately if needed
+      conversationId: sessionId, // Pass sessionId into the state
     };
 
     // We are using 'as any' here temporarily due to persistent LangGraph typing issues

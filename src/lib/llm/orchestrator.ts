@@ -21,7 +21,7 @@ import {
   saveFoodLog, // NEW: Import save function
   saveExerciseLog, // NEW: Import save function
 } from '../db/supabase'; // Import fetch and log functions
-import { searchInteractionLogs } from '../vector-db/pinecone'; // NEW: Import vector search
+import { searchInteractionLogs, getConversationHistory } from '../vector-db/pinecone'; // NEW: Import vector search & history fetch
 import { calculateBMR, calculateTDEE } from '../utils/calculations'; // Import calculation functions
 import { generateEmbedding } from '../utils/embeddings'; // NEW: Import embedding utility
 import { enrichLogIntent } from '../log-enrichment'; // NEW: Import enrichment function
@@ -82,6 +82,56 @@ async function processInput(state: AgentState): Promise<Partial<AgentState>> {
     historicalInteractionLogs: [],
   };
 }
+
+// --- NEW NODE: Load Session History ---
+async function loadSessionHistory(state: AgentState): Promise<Partial<AgentState>> {
+    console.log("--- Step: Load Session History ---");
+    const conversationId = state.conversationId;
+    const currentMessages = state.messages || []; // Should contain only the latest user message at this point
+
+    if (!conversationId) {
+        console.log("No conversationId found in state, skipping history load.");
+        return { current_step: "loadSessionHistory", messages: currentMessages }; // Return current messages
+    }
+
+    const HISTORY_LIMIT = 5; // How many past turns to fetch
+    let historyMessages: BaseMessage[] = [];
+    try {
+        // getConversationHistory returns an array of InteractionLog objects
+        const historyLogs: InteractionLog[] = await getConversationHistory(conversationId, HISTORY_LIMIT);
+        console.log(`Fetched ${historyLogs.length} interaction logs from history for session ${conversationId}.`);
+
+        // Convert InteractionLog[] to BaseMessage[] (HumanMessage, AIMessage)
+        // Assuming logs are ordered newest first from getConversationHistory, reverse for chronological order
+        historyMessages = historyLogs.reverse().flatMap(log => {
+            const messages: BaseMessage[] = [];
+            if (log.query) {
+                messages.push(new HumanMessage({ content: log.query }));
+            }
+            // Ensure llmResponse exists and has a text property before creating AIMessage
+            if (log.llmResponse && typeof log.llmResponse.text === 'string') {
+                 messages.push(new AIMessage({ content: log.llmResponse.text }));
+            } else if (typeof log.llmResponse === 'string') { // Handle older logs where llmResponse might be just a string
+                 messages.push(new AIMessage({ content: log.llmResponse }));
+            }
+            return messages;
+        });
+         console.log(`Converted history logs to ${historyMessages.length} BaseMessages.`);
+
+    } catch (error) {
+        console.error(`Error loading session history for ${conversationId}:`, error);
+        // Proceed without history if loading fails
+    }
+
+    // Prepend history to the current message(s)
+    const combinedMessages = [...historyMessages, ...currentMessages];
+
+    return {
+        current_step: "loadSessionHistory",
+        messages: combinedMessages // Update the messages channel
+    };
+}
+
 
 // --- NEW NODE: Identify Target Date ---
 async function identifyTargetDate(state: AgentState): Promise<Partial<AgentState>> {
@@ -455,6 +505,8 @@ async function runConversationLayer(state: AgentState): Promise<Partial<AgentSta
   const netCalories = state.netCalories; // Get from state
   const targetDate = state.targetDate ?? new Date().toISOString().split('T')[0]; // Get target date
   const sources = state.sources ?? []; // Get sources from state
+  // History is now part of state.messages, loaded by loadSessionHistory node
+  const fullMessageHistory = state.messages || [];
 
   // --- Prepare data for Conversation Layer ---
   // Pass reasoning output directly. The conversation layer will use derivedData from it.
@@ -463,40 +515,44 @@ async function runConversationLayer(state: AgentState): Promise<Partial<AgentSta
 
 
   // Call the actual conversation layer function, passing the reasoning output, calculated calorie data, and sources from state
+  // NOTE: The conversation layer internally fetches history again - this is redundant now.
+  // We should modify generateFinalResponse to accept history from the state instead.
+  // For now, we call it as is, but acknowledge the redundancy.
+  // TODO: Refactor generateFinalResponse to accept message history array.
   const finalResponse = await generateFinalResponse(
       userId,
       conversationId,
-      query,
+      query, // Pass the latest query
       finalReasoningData, // Pass the reasoning output
       dailyCaloriesConsumed, // Pass calculated value from state
       dailyCaloriesBurned,   // Pass calculated value from state
       netCalories,         // Pass calculated value from state
       tdee,                  // Pass user's TDEE from state
       sources                // Pass sources from state
+      // Missing: Pass fullMessageHistory here once generateFinalResponse is updated
   );
 
   console.log("Final Response:", finalResponse);
 
   // Append the final AI message to the list, store the structured answer itself
-  const finalAiMessage = new AIMessage({ content: finalResponse.text }); // Use text for message history
+  // Use the full finalResponse.text which should be generated considering history (even if fetched redundantly for now)
+  const finalAiMessage = new AIMessage({ content: finalResponse.text });
 
-  // --- Log the interaction ---
+  // --- Log the interaction (using Supabase logger, Pinecone logging happens in Conversation Layer) ---
   try {
-    const interactionLogEntry: InteractionLog = {
+    // Ensure llmResponse is stored correctly (it expects StructuredAnswer)
+    const interactionLogEntry: Omit<InteractionLog, 'id' | 'embedding'> = { // Omit fields handled by DB/Pinecone
       userId: userId,
       sessionId: conversationId, // Use conversationId as sessionId
       timestamp: new Date().toISOString(),
       query: query,
-      llmResponse: finalResponse, // Store the full structured answer (text + dataSummary)
-      sources: sources, // NEW: Store the sources used for this response
-      // userFeedback: undefined, // Not captured here
-      // metadata: undefined, // Add if needed
+      llmResponse: finalResponse, // Store the full structured answer
+      sources: sources,
     };
     await logInteraction(interactionLogEntry);
-    console.log("Interaction logged successfully.");
+    console.log("Interaction logged successfully via Supabase.");
   } catch (logError) {
-    console.error("Failed to log interaction:", logError);
-    // Decide if this error should halt execution or just be logged
+    console.error("Failed to log interaction via Supabase:", logError);
   }
   // --- End Logging ---
   // Moved enrichAgenticLogIntents function definition below
@@ -774,6 +830,7 @@ const workflow = new StateGraph<AgentState>(graphArgs);
 
 // Add nodes (using 'as any' to bypass type errors for now)
 workflow.addNode("processInput", processInput as any);
+workflow.addNode("loadSessionHistory", loadSessionHistory as any); // NEW node
 workflow.addNode("identifyTargetDate", identifyTargetDate as any);
 workflow.addNode("fetchDailyContext", fetchDailyContext as any); // NEW node
 workflow.addNode("analyzeQueryForPersonalization", analyzeQueryForPersonalization as any);
@@ -791,7 +848,8 @@ workflow.addNode("runConversationLayer", runConversationLayer as any);
 workflow.setEntryPoint("processInput" as any);
 
 // Add edges (without type assertions for now)
-workflow.addEdge("processInput" as any, "identifyTargetDate" as any); // Input -> Identify Date
+workflow.addEdge("processInput" as any, "loadSessionHistory" as any); // Input -> Load History
+workflow.addEdge("loadSessionHistory" as any, "identifyTargetDate" as any); // Load History -> Identify Date
 workflow.addEdge("identifyTargetDate" as any, "fetchDailyContext" as any); // Identify Date -> Fetch Daily Context
 // Ensure edge goes from fetchDailyContext to analyzeQueryForPersonalization
 workflow.addEdge("fetchDailyContext" as any, "analyzeQueryForPersonalization" as any);
