@@ -60,6 +60,7 @@ export interface AgentState { // Add export keyword
   // NEW: State to hold fully enriched logs ready for saving
   enrichedAgenticLogs?: (Omit<FoodLog, 'id' | 'createdAt' | 'updatedAt'> | Omit<ExerciseLog, 'id' | 'createdAt' | 'updatedAt'>)[];
   guestProfileData?: Partial<UserProfile>; // NEW: For guest mode onboarding
+  timeContext?: 'Morning' | 'Midday' | 'Afternoon' | 'Evening' | 'Night'; // NEW: Time context
 }
 
 // --- Define Nodes ---
@@ -130,6 +131,30 @@ async function loadSessionHistory(state: AgentState): Promise<Partial<AgentState
         current_step: "loadSessionHistory",
         messages: combinedMessages // Update the messages channel
     };
+}
+
+// --- NEW NODE: Determine Time Context ---
+async function determineTimeContext(state: AgentState): Promise<Partial<AgentState>> {
+    console.log("--- Step: Determine Time Context ---");
+    const now = new Date();
+    // Use Los Angeles time zone for consistency with environment_details
+    const currentHour = parseInt(now.toLocaleTimeString('en-US', { hour: '2-digit', hour12: false, timeZone: 'America/Los_Angeles' }));
+    let timeContext: 'Morning' | 'Midday' | 'Afternoon' | 'Evening' | 'Night';
+
+    if (currentHour >= 5 && currentHour < 11) {
+        timeContext = 'Morning';
+    } else if (currentHour >= 11 && currentHour < 14) {
+        timeContext = 'Midday';
+    } else if (currentHour >= 14 && currentHour < 17) {
+        timeContext = 'Afternoon';
+    } else if (currentHour >= 17 && currentHour < 21) {
+        timeContext = 'Evening';
+    } else {
+        timeContext = 'Night'; // Covers 21:00 to 04:59
+    }
+
+    console.log(`Current hour (LA Time): ${currentHour}, Determined Time Context: ${timeContext}`);
+    return { current_step: "determineTimeContext", timeContext };
 }
 
 
@@ -443,8 +468,8 @@ async function runReasoningLayer(state: AgentState): Promise<Partial<AgentState>
   // UserProfile and UserGoals are now potentially populated in the state
   const userProfile = state.userProfile ?? null;
   // const userGoals = state.userGoals ?? []; // Goals are now in userProfile
-  // TODO: Determine actual time context (e.g., based on server time or user input) - This is different from targetDate
-  const timeContext = "Midday"; // Placeholder for time-of-day context
+  // Get time context from state
+  const timeContext = state.timeContext ?? 'Midday'; // Use determined context or default
   const targetDate = state.targetDate ?? new Date().toISOString().split('T')[0]; // Use identified date or default
   // Get daily and historical logs from state
   const dailyFoodLogs = state.dailyFoodLogs ?? [];
@@ -821,6 +846,11 @@ const graphArgs: StateGraphArgs<AgentState> = {
     guestProfileData: {
        value: (x?: Partial<UserProfile>, y?: Partial<UserProfile>) => y ?? x,
        default: () => undefined,
+    },
+    // NEW: Channel for time context
+    timeContext: {
+        value: (x?: 'Morning' | 'Midday' | 'Afternoon' | 'Evening' | 'Night', y?: 'Morning' | 'Midday' | 'Afternoon' | 'Evening' | 'Night') => y ?? x,
+        default: () => undefined,
     }
   },
 };
@@ -831,6 +861,7 @@ const workflow = new StateGraph<AgentState>(graphArgs);
 // Add nodes (using 'as any' to bypass type errors for now)
 workflow.addNode("processInput", processInput as any);
 workflow.addNode("loadSessionHistory", loadSessionHistory as any); // NEW node
+workflow.addNode("determineTimeContext", determineTimeContext as any); // NEW node
 workflow.addNode("identifyTargetDate", identifyTargetDate as any);
 workflow.addNode("fetchDailyContext", fetchDailyContext as any); // NEW node
 workflow.addNode("analyzeQueryForPersonalization", analyzeQueryForPersonalization as any);
@@ -849,7 +880,8 @@ workflow.setEntryPoint("processInput" as any);
 
 // Add edges (without type assertions for now)
 workflow.addEdge("processInput" as any, "loadSessionHistory" as any); // Input -> Load History
-workflow.addEdge("loadSessionHistory" as any, "identifyTargetDate" as any); // Load History -> Identify Date
+workflow.addEdge("loadSessionHistory" as any, "determineTimeContext" as any); // Load History -> Determine Time Context
+workflow.addEdge("determineTimeContext" as any, "identifyTargetDate" as any); // Determine Time Context -> Identify Date
 workflow.addEdge("identifyTargetDate" as any, "fetchDailyContext" as any); // Identify Date -> Fetch Daily Context
 // Ensure edge goes from fetchDailyContext to analyzeQueryForPersonalization
 workflow.addEdge("fetchDailyContext" as any, "analyzeQueryForPersonalization" as any);
