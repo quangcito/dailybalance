@@ -54,7 +54,7 @@ export interface AgentState { // Add export keyword
   historicalInteractionLogs?: any[]; // Pinecone search returns metadata objects
   // NEW: State to hold fully enriched logs ready for saving
   enrichedAgenticLogs?: (Omit<FoodLog, 'id' | 'createdAt' | 'updatedAt'> | Omit<ExerciseLog, 'id' | 'createdAt' | 'updatedAt'>)[];
-  // Ensure calculatedDailyCalories state field is removed
+  guestProfileData?: Partial<UserProfile>; // NEW: For guest mode onboarding
 }
 
 // --- Define Nodes ---
@@ -187,25 +187,78 @@ async function fetchUserData(state: AgentState): Promise<Partial<AgentState>> {
    }
    console.log(`Fetching data for userId: ${state.userId}`);
    try {
-       let profile = await getUserProfile(state.userId);
-       // const goals = await getActiveUserGoals(state.userId); // Removed goal fetching
-       console.log("Fetched Profile:", profile ? 'Yes' : 'No');
-       // console.log("Fetched Goals:", goals.length); // Removed goal logging
-
-       // Calculate BMR and TDEE if profile exists
-       if (profile) {
-           const bmr = calculateBMR(profile);
-           const tdee = calculateTDEE(bmr, profile.activityLevel);
-           // Assign undefined if calculation resulted in null to match UserProfile type
-           profile = { ...profile, bmr: bmr ?? undefined, tdee: tdee ?? undefined };
-           console.log("Calculated BMR:", bmr);
-           console.log("Calculated TDEE:", tdee);
+       let profile: UserProfile | null = null;
+       try {
+            profile = await getUserProfile(state.userId);
+            console.log("Fetched Profile from DB:", profile ? 'Yes' : 'No');
+       } catch (dbError) {
+            console.warn("Failed to fetch profile from DB for userId:", state.userId, dbError);
+            // Continue, as this might be a guest user
        }
 
-       return { current_step: "fetchUserData", userProfile: profile }; // Removed userGoals
+
+       // If profile NOT found in DB (guest user) AND guest data was provided
+       if (!profile && state.guestProfileData) {
+           console.log("Profile not found in DB, using provided guestProfileData.");
+           // Construct a UserProfile object from guest data.
+           // Construct guest profile from guestProfileData
+           profile = {
+               // Required fields with defaults/placeholders
+               id: state.userId,
+               email: `guest-${state.userId}@example.com`,
+               name: 'Guest User',
+               createdAt: new Date().toISOString(),
+               updatedAt: new Date().toISOString(),
+
+               // Fields from guestProfileData (basic)
+               age: state.guestProfileData.age,
+               gender: state.guestProfileData.gender,
+               activityLevel: state.guestProfileData.activityLevel,
+               goal: state.guestProfileData.goal,
+
+               // NEW fields from guestProfileData
+               height: state.guestProfileData.height, // Will be undefined if not provided
+               weight: state.guestProfileData.weight, // Will be undefined if not provided
+               dietaryPreferences: state.guestProfileData.dietaryPreferences, // Includes booleans and arrays
+               macroTargets: state.guestProfileData.macroTargets, // Will be undefined if not provided
+               preferences: state.guestProfileData.preferences, // Will be undefined if not provided
+
+               // Calculated fields - initialize as undefined
+               bmr: undefined,
+               tdee: undefined,
+           };
+
+           // Attempt BMR/TDEE calculation for guest IF required data is present
+           if (profile.age && profile.gender && profile.height && profile.weight && profile.activityLevel) {
+                console.log("Calculating BMR/TDEE for guest user.");
+                const guestBmr = calculateBMR(profile as UserProfile); // Cast needed as TS doesn't know fields are checked
+                const guestTdee = calculateTDEE(guestBmr, profile.activityLevel);
+                profile.bmr = guestBmr ?? undefined;
+                profile.tdee = guestTdee ?? undefined;
+                console.log("Guest Calculated BMR:", profile.bmr);
+                console.log("Guest Calculated TDEE:", profile.tdee);
+           } else {
+                console.log("Skipping BMR/TDEE calculation for guest user due to missing data (height/weight/etc.).");
+           }
+
+           console.log("Constructed Guest Profile:", profile);
+
+       } else if (profile) { // Existing user profile found
+            console.log("Existing user profile found, calculating BMR/TDEE.");
+            const bmr = calculateBMR(profile); // Use existing profile data
+            const tdee = calculateTDEE(bmr, profile.activityLevel);
+            profile = { ...profile, bmr: bmr ?? undefined, tdee: tdee ?? undefined };
+            console.log("User Calculated BMR:", bmr); // Logged as User BMR
+            console.log("User Calculated TDEE:", tdee); // Logged as User TDEE
+       } else {
+            console.log("No profile found in DB and no guest data provided.");
+            // profile remains null
+       }
+
+       return { current_step: "fetchUserData", userProfile: profile };
    } catch (error) {
-       console.error("Error fetching user data:", error);
-       return { current_step: "fetchUserData", userProfile: null }; // Return defaults on error, removed userGoals
+       console.error("Unexpected error in fetchUserData:", error);
+       return { current_step: "fetchUserData", userProfile: null };
    }
 }
 
@@ -660,7 +713,12 @@ const graphArgs: StateGraphArgs<AgentState> = {
     // Add channel for enriched logs
     enrichedAgenticLogs: {
         value: (x?: (Omit<FoodLog, 'id' | 'createdAt' | 'updatedAt'> | Omit<ExerciseLog, 'id' | 'createdAt' | 'updatedAt'>)[], y?: (Omit<FoodLog, 'id' | 'createdAt' | 'updatedAt'> | Omit<ExerciseLog, 'id' | 'createdAt' | 'updatedAt'>)[]) => y ?? x,
-        default: () => [], // Correct default: empty array
+        default: () => [],
+    },
+    // NEW: Channel for guest profile data
+    guestProfileData: {
+       value: (x?: Partial<UserProfile>, y?: Partial<UserProfile>) => y ?? x,
+       default: () => undefined,
     }
   },
 };

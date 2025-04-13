@@ -10,8 +10,8 @@ export interface UserProfile {
   weight?: number; // in kg
 
   // Health goals
-  goal?: 'weight-loss' | 'maintenance' | 'muscle-gain' | 'performance' | 'general-health';
-  activityLevel?: 'sedentary' | 'light' | 'moderate' | 'active' | 'very-active';
+  goal?: 'weight-loss' | 'maintenance' | 'muscle-gain' | 'performance' | 'general-health'; // Note: DB might use different strings here too
+  activityLevel?: 'sedentary' | 'lightly_active' | 'moderately_active' | 'very_active' | 'extra_active'; // Updated to match DB enum
 
   // Dietary preferences
   dietaryPreferences?: {

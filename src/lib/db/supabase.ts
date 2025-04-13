@@ -2,6 +2,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { UserProfile, InteractionLog } from '@/types/user';
 import { FoodLog } from '@/types/nutrition'; // Import FoodLog
 import { ExerciseLog } from '@/types/exercise'; // Import ExerciseLog
+import { generateEmbedding } from '../utils/embeddings'; // Import embedding utility
 
 // Ensure environment variables are set
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -47,6 +48,65 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
     return null;
   }
 }
+
+/**
+ * Saves a guest user's profile data to the 'profiles' table.
+ * @param guestId - The generated UUID for the guest user.
+ * @param profileData - The partial profile data collected from the onboarding form.
+ */
+export async function saveGuestProfile(guestId: string, profileData: Partial<UserProfile>): Promise<void> {
+  console.log(`[saveGuestProfile] Attempting to save profile for guestId: ${guestId}`);
+
+  // Map frontend data (camelCase, partial) to DB schema (snake_case, potentially more fields)
+  const dbProfileData = {
+    id: guestId, // Use the guestId as the primary key
+    // Required fields with defaults/placeholders
+    email: `guest-${guestId}@example.com`, // Placeholder email
+    name: 'Guest User', // Placeholder name
+    // Map collected data, checking for undefined
+    age: profileData.age,
+    gender: profileData.gender,
+    height: profileData.height, // in cm
+    weight: profileData.weight, // in kg
+    activity_level: profileData.activityLevel, // Map camelCase to snake_case
+    goal: profileData.goal,
+    // Map complex objects (ensure DB columns are JSON/JSONB)
+    dietary_preferences: profileData.dietaryPreferences, // Map camelCase to snake_case
+    macro_targets: profileData.macroTargets, // Map camelCase to snake_case
+    preferences: profileData.preferences,
+    // Timestamps - let Supabase handle defaults if triggers exist, or set explicitly
+    // created_at: new Date().toISOString(),
+    // updated_at: new Date().toISOString(),
+  };
+
+  // Remove undefined fields to avoid inserting nulls unintentionally
+  Object.keys(dbProfileData).forEach(key => {
+      const typedKey = key as keyof typeof dbProfileData;
+      if (dbProfileData[typedKey] === undefined) {
+          delete dbProfileData[typedKey];
+      }
+  });
+
+  try {
+    const { error } = await supabase
+      .from('profiles')
+      .insert([dbProfileData]); // Insert the mapped data
+
+    if (error) {
+      console.error(`[saveGuestProfile] Error saving guest profile for guestId ${guestId}:`, error.message);
+      // Handle specific errors? e.g., duplicate ID?
+      // Throw error or handle gracefully
+      throw error; // Re-throw for the API route to catch
+    } else {
+      console.log(`[saveGuestProfile] Guest profile saved successfully for guestId: ${guestId}`);
+    }
+  } catch (err) {
+    console.error('[saveGuestProfile] Unexpected error:', err);
+    // Ensure error is propagated
+    throw err instanceof Error ? err : new Error('Unexpected error saving guest profile');
+  }
+}
+
 
 /**
  * Logs a user interaction to the 'interaction_logs' table.
@@ -200,7 +260,6 @@ export async function getDailyInteractionLogs(userId: string, targetDate: string
 
 // --- NEW FUNCTIONS FOR SAVING LOGS WITH EMBEDDINGS ---
 
-import { generateEmbedding } from '../utils/embeddings'; // Import embedding utility
 
 /**
 * Saves a food log entry along with its embedding to the 'food_logs' table.
@@ -268,7 +327,6 @@ try {
   console.error('[saveFoodLog] Unexpected error saving food log:', err);
 }
 }
-// Removed extra closing brace that was here
 
 /**
  * Saves an exercise log entry along with its embedding to the 'exercise_logs' table.

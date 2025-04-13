@@ -1,18 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { StructuredAnswer, Source } from '@/types/conversation';
-import { app as answerEngineGraph, AgentState } from '@/lib/llm/orchestrator'; // Import AgentState and rename app
-import { HumanMessage } from "@langchain/core/messages"; // Import HumanMessage
-
+import { app as answerEngineGraph, AgentState } from '@/lib/llm/orchestrator';
+import { HumanMessage } from "@langchain/core/messages";
+import { UserProfile } from '@/types/user'; // Import UserProfile
 interface RequestBody {
   userId: string;
   query: string;
   sessionId?: string;
+  guestProfileData?: Partial<UserProfile>; // Add optional guest profile data
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body: RequestBody = await req.json();
-    const { userId, query, sessionId } = body;
+    const { userId, query, sessionId, guestProfileData } = body; // Extract guestProfileData
 
     if (!userId || !query) {
       return NextResponse.json({ error: 'Missing userId or query' }, { status: 400 });
@@ -25,8 +26,8 @@ export async function POST(req: NextRequest) {
     const initialState: Partial<AgentState> = {
       messages: [new HumanMessage(query)], // Wrap query in HumanMessage
       userId,
-      // sessionId is not directly part of AgentState, but could be passed if needed by nodes
-      // For now, we rely on userId being sufficient for context fetching within nodes.
+      guestProfileData, // Pass guest profile data to the graph state
+      // sessionId is not directly part of AgentState, handled separately if needed
     };
 
     // We are using 'as any' here temporarily due to persistent LangGraph typing issues
