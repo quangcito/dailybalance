@@ -48,6 +48,10 @@ export interface AgentState { // Add export keyword
   dailyFoodLogs?: FoodLog[];
   dailyExerciseLogs?: ExerciseLog[];
   dailyInteractionLogs?: InteractionLog[];
+  // Add fields for calculated daily totals
+  dailyCaloriesConsumed?: number; // NEW: Sum of calories from dailyFoodLogs
+  dailyCaloriesBurned?: number; // NEW: Sum of caloriesBurned from dailyExerciseLogs
+  netCalories?: number; // NEW: Calculated net calories (TDEE - consumed + burned)
   // Add fields for retrieved historical context
   historicalFoodLogs?: FoodLog[];
   historicalExerciseLogs?: ExerciseLog[];
@@ -128,6 +132,8 @@ async function fetchDailyContext(state: AgentState): Promise<Partial<AgentState>
             dailyFoodLogs: [],
             dailyExerciseLogs: [],
             dailyInteractionLogs: [],
+            dailyCaloriesConsumed: 0, // Initialize sums
+            dailyCaloriesBurned: 0,
         };
     }
 
@@ -140,8 +146,12 @@ async function fetchDailyContext(state: AgentState): Promise<Partial<AgentState>
             getDailyInteractionLogs(userId, targetDate),
         ]);
 
-        console.log(`Fetched Food Logs: ${foodLogs.length}`);
-        console.log(`Fetched Exercise Logs: ${exerciseLogs.length}`);
+        // Calculate sums
+        const dailyCaloriesConsumed = foodLogs.reduce((sum, log) => sum + (log.calories || 0), 0);
+        const dailyCaloriesBurned = exerciseLogs.reduce((sum, log) => sum + (log.caloriesBurned || 0), 0);
+
+        console.log(`Fetched Food Logs: ${foodLogs.length} (Consumed: ${dailyCaloriesConsumed} kcal)`);
+        console.log(`Fetched Exercise Logs: ${exerciseLogs.length} (Burned: ${dailyCaloriesBurned} kcal)`);
         console.log(`Fetched Interaction Logs: ${interactionLogs.length}`);
 
         return {
@@ -149,15 +159,19 @@ async function fetchDailyContext(state: AgentState): Promise<Partial<AgentState>
             dailyFoodLogs: foodLogs,
             dailyExerciseLogs: exerciseLogs,
             dailyInteractionLogs: interactionLogs,
+            dailyCaloriesConsumed: dailyCaloriesConsumed, // Store sum in state
+            dailyCaloriesBurned: dailyCaloriesBurned, // Store sum in state
         };
     } catch (error) {
         console.error("Error fetching daily context logs:", error);
-        // Return empty arrays on error
+        // Return empty arrays and zero sums on error
         return {
             current_step: "fetchDailyContext",
             dailyFoodLogs: [],
             dailyExerciseLogs: [],
             dailyInteractionLogs: [],
+            dailyCaloriesConsumed: 0,
+            dailyCaloriesBurned: 0,
         };
     }
 }
@@ -343,6 +357,24 @@ async function runKnowledgeLayer(state: AgentState): Promise<Partial<AgentState>
   return { current_step: "runKnowledgeLayer", knowledgeResponse };
 }
 
+// Node: Calculate Net Calories
+async function calculateNetCalories(state: AgentState): Promise<Partial<AgentState>> {
+    console.log("--- Step: Calculate Net Calories ---");
+    const tdee = state.userProfile?.tdee;
+    const consumed = state.dailyCaloriesConsumed ?? 0;
+    const burned = state.dailyCaloriesBurned ?? 0;
+    let netCalories: number | undefined = undefined;
+
+    if (tdee !== undefined) {
+        netCalories = tdee - consumed + burned;
+        console.log(`Calculated Net Calories: TDEE(${tdee}) - Consumed(${consumed}) + Burned(${burned}) = ${netCalories}`);
+    } else {
+        console.log("TDEE is undefined, cannot calculate net calories.");
+    }
+
+    return { current_step: "calculateNetCalories", netCalories };
+}
+
 // Node: Reasoning Layer
 // Returns updates for specific channels
 async function runReasoningLayer(state: AgentState): Promise<Partial<AgentState>> {
@@ -365,6 +397,11 @@ async function runReasoningLayer(state: AgentState): Promise<Partial<AgentState>
   const historicalFoodLogs = state.historicalFoodLogs ?? [];
   const historicalExerciseLogs = state.historicalExerciseLogs ?? [];
   const historicalInteractionLogs = state.historicalInteractionLogs ?? [];
+  // Get calculated calorie data from state
+  const dailyCaloriesConsumed = state.dailyCaloriesConsumed;
+  const dailyCaloriesBurned = state.dailyCaloriesBurned;
+  const netCalories = state.netCalories;
+
 
   if (!knowledgeInfo) {
       console.warn("Reasoning Layer: Knowledge information is missing.");
@@ -383,7 +420,11 @@ async function runReasoningLayer(state: AgentState): Promise<Partial<AgentState>
       // NEW: Pass historical logs
       historicalFoodLogs,
       historicalExerciseLogs,
-      historicalInteractionLogs
+      historicalInteractionLogs,
+      // NEW: Pass calculated calorie data
+      dailyCaloriesConsumed,
+      dailyCaloriesBurned,
+      netCalories
   );
 
 
@@ -402,49 +443,43 @@ async function runConversationLayer(state: AgentState): Promise<Partial<AgentSta
   const userId = state.userId || "unknown-user"; // Provide default if needed
   const conversationId = state.conversationId || `temp-${Date.now()}`; // Provide default if needed
   const tdee = state.userProfile?.tdee; // Get TDEE from profile if available
+  const dailyCaloriesConsumed = state.dailyCaloriesConsumed; // Get from state
+  const dailyCaloriesBurned = state.dailyCaloriesBurned; // Get from state
+  const netCalories = state.netCalories; // Get from state
   const targetDate = state.targetDate ?? new Date().toISOString().split('T')[0]; // Get target date
 
-  // --- Calculate current daily calories ---
-  let currentDailyCalories = 0;
-  try {
-      // Fetch the LATEST logs for the day, including any just saved
-      const currentFoodLogs = await getDailyFoodLogs(userId, targetDate);
-      if (currentFoodLogs.length > 0) {
-          currentDailyCalories = currentFoodLogs.reduce((sum, log) => sum + (log.calories || 0), 0);
-      }
-      console.log(`[Conversation Layer] Recalculated daily calories: ${currentDailyCalories}`);
-  } catch (fetchError) {
-       console.error("[Conversation Layer] Error fetching latest food logs for calorie calculation:", fetchError);
-       // Proceed with 0 or potentially stale data if needed, or handle error
-  }
+  // --- Calculate current daily calories --- (REMOVED - Now calculated earlier and passed in state)
+  // let currentDailyCalories = 0;
+  // try {
+  //     // Fetch the LATEST logs for the day, including any just saved
+  //     const currentFoodLogs = await getDailyFoodLogs(userId, targetDate);
+  //     if (currentFoodLogs.length > 0) {
+  //         currentDailyCalories = currentFoodLogs.reduce((sum, log) => sum + (log.calories || 0), 0);
+  //     }
+  //     console.log(`[Conversation Layer] Recalculated daily calories: ${currentDailyCalories}`);
+  // } catch (fetchError) {
+  //      console.error("[Conversation Layer] Error fetching latest food logs for calorie calculation:", fetchError);
+  //      // Proceed with 0 or potentially stale data if needed, or handle error
+  // }
   // --- End calorie calculation ---
 
 
   // --- Prepare data for Conversation Layer ---
-  // Start with reasoning output, but override calorie data with fresh calculation
+  // Pass reasoning output directly. The conversation layer will use derivedData from it.
   // Ensure insights has a default value if reasoningOutput is null
-  const finalReasoningData: ReasoningOutput = {
-      insights: reasoningOutput?.insights ?? '', // Provide default empty string for insights
-      suggestions: reasoningOutput?.suggestions,
-      warnings: reasoningOutput?.warnings,
-      agenticLogIntents: reasoningOutput?.agenticLogIntents,
-      error: reasoningOutput?.error,
-      derivedData: {
-          ...(reasoningOutput?.derivedData ?? {}), // Keep other derived data
-          dailyCaloriesConsumed: currentDailyCalories, // Override with fresh calculation
-          userTDEE: tdee, // Ensure TDEE is included
-          remainingCalories: tdee !== undefined ? tdee - currentDailyCalories : undefined, // Recalculate remaining
-      }
-  };
+  const finalReasoningData = reasoningOutput ?? { insights: '', error: 'Reasoning output was null' };
 
-  // Call the actual conversation layer function, passing the *updated* reasoning data and calorie info
+
+  // Call the actual conversation layer function, passing the reasoning output and the calculated calorie data from state
   const finalResponse = await generateFinalResponse(
       userId,
       conversationId,
       query,
-      finalReasoningData, // Pass the potentially modified reasoning output
-      currentDailyCalories, // Pass newly calculated daily calories separately as well
-      tdee                  // Pass user's TDEE separately as well
+      finalReasoningData, // Pass the reasoning output
+      dailyCaloriesConsumed, // Pass calculated value from state
+      dailyCaloriesBurned,   // Pass calculated value from state
+      netCalories,         // Pass calculated value from state
+      tdee                   // Pass user's TDEE from state
   );
 
   console.log("Final Response:", finalResponse);
@@ -696,6 +731,19 @@ const graphArgs: StateGraphArgs<AgentState> = {
       value: (x?: InteractionLog[], y?: InteractionLog[]) => y ?? x,
       default: () => [],
     },
+    // Add channels for calculated daily totals
+    dailyCaloriesConsumed: {
+        value: (x?: number, y?: number) => y ?? x,
+        default: () => 0,
+    },
+    dailyCaloriesBurned: {
+        value: (x?: number, y?: number) => y ?? x,
+        default: () => 0,
+    },
+    netCalories: {
+        value: (x?: number, y?: number) => y ?? x,
+        default: () => undefined,
+    },
     // Add channels for historical context logs
     historicalFoodLogs: {
       value: (x?: FoodLog[], y?: FoodLog[]) => y ?? x,
@@ -733,6 +781,7 @@ workflow.addNode("fetchDailyContext", fetchDailyContext as any); // NEW node
 workflow.addNode("analyzeQueryForPersonalization", analyzeQueryForPersonalization as any);
 workflow.addNode("fetchUserData", fetchUserData as any);
 workflow.addNode("retrieveHistoricalContext", retrieveHistoricalContext as any); // NEW node
+workflow.addNode("calculateNetCalories", calculateNetCalories as any); // NEW node
 workflow.addNode("runKnowledgeLayer", runKnowledgeLayer as any);
 workflow.addNode("runReasoningLayer", runReasoningLayer as any);
 workflow.addNode("enrichAgenticLogIntents", enrichAgenticLogIntents as any); // Ensure this node is added
@@ -760,7 +809,9 @@ workflow.addConditionalEdges(
 );
 
 workflow.addEdge("fetchUserData" as any, "retrieveHistoricalContext" as any); // After fetch -> Retrieve History
-workflow.addEdge("retrieveHistoricalContext" as any, "runKnowledgeLayer" as any); // After Retrieve History -> Knowledge
+// Both paths (with or without fetchUserData) converge at retrieveHistoricalContext
+workflow.addEdge("retrieveHistoricalContext" as any, "calculateNetCalories" as any); // After Retrieve History -> Calculate Net Calories
+workflow.addEdge("calculateNetCalories" as any, "runKnowledgeLayer" as any); // After Calculate Net Calories -> Knowledge
 // Note: runKnowledgeLayer edge remains the same (doesn't directly depend on date yet)
 workflow.addEdge("runKnowledgeLayer" as any, "runReasoningLayer" as any); // Knowledge -> Reasoning
 workflow.addEdge("runReasoningLayer" as any, "enrichAgenticLogIntents" as any); // Reasoning -> Enrich Intents

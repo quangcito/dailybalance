@@ -50,18 +50,18 @@ const REASONING_LAYER_SYSTEM_PROMPT = `You are the Reasoning Layer of the DailyB
     *   **Store Intent:** Prepare an AgenticLogIntent object (an object with a 'type' field set to 'food' or 'exercise', and a 'details' field containing the extracted phrase string). If multiple non-duplicate events are mentioned, create multiple intent objects. If none are found or only duplicates are found, this step yields nothing.
     *   **Crucially:** Do NOT try to estimate calories, macros, duration, etc., at this stage. Only extract the raw details mentioned for non-duplicate events.
 
-2.  **Analyze & Synthesize:** Now, analyze the Factual Information, User Profile, Goals, Time Context, Daily Logs, and Historical Logs. Consider the user's overall context and progress.
+2.  **Analyze & Synthesize:** Now, analyze the Factual Information, User Profile, Goals, Time Context, Daily Logs, Historical Logs, and the provided **Calorie Summary (Consumed, Burned, Net)**. Consider the user's overall context and progress.
 
 3.  **Generate Insights:** Create concise, personalized insights based on the synthesis in Step 2. What does the information mean for *this user* today? **If you detected a duplicate log in Step 1, include a brief note about it here (e.g., "Note: Oatmeal already logged for today").**
 
 4.  **Formulate Suggestions/Warnings:** Generate preliminary, actionable suggestions and potential warnings based on the synthesis.
 
-5.  **Calculate Derived Data:** Compute relevant summary data points based *only* on the provided logs and profile (e.g., daily calorie total *before* any potential agentic logs).
+5.  **Populate Derived Data:** Create a 'derivedData' object. Include the provided 'dailyCaloriesConsumed', 'dailyCaloriesBurned', and 'netCalories' values directly in this object. You may add other relevant summary points derived from the inputs if useful (e.g., total protein consumed). **Do NOT recalculate the calorie values.**
 
-6.  **Output JSON:** Respond ONLY with a JSON object matching the ReasoningOutput interface (containing fields like 'insights' (string type), optional 'suggestions' (list of strings), optional 'warnings' (list of strings), optional 'derivedData' (object with any properties), optional 'agenticLogIntents' (list of AgenticLogIntent objects)).
+6.  **Output JSON:** Respond ONLY with a JSON object matching the ReasoningOutput interface (containing fields like 'insights' (string type), optional 'suggestions' (list of strings), optional 'warnings' (list of strings), optional 'derivedData' (object with properties like 'dailyCaloriesConsumed', 'dailyCaloriesBurned', 'netCalories'), optional 'agenticLogIntents' (list of AgenticLogIntent objects)).
     *   Populate the 'insights', 'suggestions', and 'warnings' fields based on Steps 2, 3, and 4.
     *   Populate the 'agenticLogIntents' field with the list of intent objects identified in Step 1. If no intents were found, omit this field or use an empty list.
-    *   Populate the 'derivedData' field based on Step 5.
+    *   Populate the 'derivedData' field based on Step 5, ensuring it includes the provided calorie summary values.
 
 **Inputs Provided:**
 *   User Query
@@ -74,38 +74,42 @@ const REASONING_LAYER_SYSTEM_PROMPT = `You are the Reasoning Layer of the DailyB
 *   Historical Food Logs
 *   Historical Exercise Logs
 *   Historical Interaction Logs
+*   **Calorie Summary:**
+    *   dailyCaloriesConsumed (number)
+    *   dailyCaloriesBurned (number)
+    *   netCalories (number | undefined - may be undefined if TDEE is missing)
 
 **Example Scenario 1:**
 *   Query: "I ate an apple for a snack, was that okay?"
-*   (Other inputs...)
+*   (Other inputs including Calorie Summary...)
 *   Output: {
     "insights": "An apple is a good low-calorie snack choice...",
     "suggestions": ["Pairing it with protein..."],
-    "derivedData": { ... },
+    "derivedData": { "dailyCaloriesConsumed": 595, "dailyCaloriesBurned": 0, "netCalories": 1605, ... },
     "agenticLogIntents": [ { "type": "food", "details": "an apple for a snack" } ]
   }
 
 **Example Scenario 2:**
 *   Query: "I had oatmeal for breakfast, what's a good lunch?"
-*   (Other inputs...)
+*   (Other inputs including Calorie Summary...)
 *   Output: {
     "insights": "Having oatmeal for breakfast provides good fiber... (Note: Oatmeal already logged for today)", // Example insight if duplicate found
     "suggestions": ["For lunch, consider a grilled chicken salad..."],
-    "derivedData": { ... }
+    "derivedData": { "dailyCaloriesConsumed": 300, "dailyCaloriesBurned": 0, "netCalories": 1900, ... }
     // No agenticLogIntents because it was a duplicate
   }
 
 **Example Scenario 3:**
 *   Query: "What are the benefits of running?"
-*   (Other inputs...)
+*   (Other inputs including Calorie Summary...)
 *   Output: {
     "insights": "Running offers numerous cardiovascular benefits...",
     "suggestions": [...],
-    "derivedData": { ... }
+    "derivedData": { "dailyCaloriesConsumed": 1200, "dailyCaloriesBurned": 350, "netCalories": 1350, ... }
     // No agenticLogIntents field as no event was mentioned
   }
 
-Focus on accurately identifying the log intent (Step 1) and then generating the rest of the response based on the overall context. Ensure accurate JSON output.`;
+Focus on accurately identifying the log intent (Step 1) and then generating the rest of the response based on the overall context, including the provided calorie summary. Ensure accurate JSON output.`;
 
 /**
  * Generates personalized insights by synthesizing factual information with user context.
@@ -134,7 +138,11 @@ export async function generatePersonalizedInsights(
   // NEW: Add historical log parameters
   historicalFoodLogs: FoodLog[],
   historicalExerciseLogs: ExerciseLog[],
-  historicalInteractionLogs: any[]
+  historicalInteractionLogs: any[],
+  // NEW: Add calculated calorie parameters
+  dailyCaloriesConsumed?: number,
+  dailyCaloriesBurned?: number,
+  netCalories?: number
 ): Promise<ReasoningOutput | null> {
   console.log(`Reasoning Layer: Generating insights for query: "${query}"`);
 
@@ -151,6 +159,10 @@ Daily Interaction Logs: ${JSON.stringify(dailyInteractionLogs)}
 Historical Food Logs: ${JSON.stringify(historicalFoodLogs)}
 Historical Exercise Logs: ${JSON.stringify(historicalExerciseLogs)}
 Historical Interaction Logs: ${JSON.stringify(historicalInteractionLogs)}
+Calorie Summary:
+  - Daily Calories Consumed: ${dailyCaloriesConsumed ?? 'Not Available'}
+  - Daily Calories Burned: ${dailyCaloriesBurned ?? 'Not Available'}
+  - Net Calories: ${netCalories ?? 'Not Available (Missing TDEE?)'}
 
 Generate the JSON output based on these inputs.
 `;
