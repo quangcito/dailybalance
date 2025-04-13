@@ -1,12 +1,13 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { UserProfile, UserGoal, InteractionLog } from '@/types/user';
+import { UserProfile, InteractionLog } from '@/types/user'; // Removed UserGoal
 
 // Ensure environment variables are set
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY; // Use Service Role Key for backend
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase URL or Anon Key in environment variables.');
+// Check for both URL and the Service Key now
+if (!supabaseUrl || !supabaseServiceKey) {
+  throw new Error('Missing Supabase URL or Service Role Key in environment variables.');
 }
 
 // Initialize Supabase client
@@ -15,7 +16,8 @@ if (!supabaseUrl || !supabaseAnonKey) {
 // ensure RLS is properly configured or use the user's auth token.
 // For simplicity here, we'll use the anon key, assuming RLS allows these reads/writes.
 // Consider using the service key for admin-level operations if needed.
-const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKey);
+// Initialize with Service Role Key to bypass RLS for server-side operations
+const supabase: SupabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
 /**
  * Fetches the user's profile from the 'profiles' table.
@@ -24,14 +26,20 @@ const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKey);
  */
 export async function getUserProfile(userId: string): Promise<UserProfile | null> {
   try {
+    console.log(`[getUserProfile] Attempting to fetch profile for userId: ${userId}`); // Added logging
     const { data, error } = await supabase
       .from('profiles') // Assuming table name is 'profiles'
       .select('*')
       .eq('id', userId)
-      .single(); // Expecting only one profile per user ID
+      .maybeSingle(); // Changed from .single() to handle missing profiles gracefully
+
+    // Added detailed logging of the raw query result
+    console.log(`[getUserProfile] Raw Supabase response for userId ${userId}:`, { data, error });
 
     if (error) {
-      console.error('Error fetching user profile:', error.message);
+      // Note: .maybeSingle() only errors if MULTIPLE rows are found.
+      // If error exists here, it's likely due to multiple rows or a connection issue.
+      console.error(`Error fetching user profile for userId ${userId}:`, error.message);
       return null;
     }
     return data as UserProfile;
@@ -41,30 +49,7 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
   }
 }
 
-/**
- * Fetches the user's active goals from the 'goals' table.
- * @param userId - The ID of the user.
- * @returns An array of active user goals or an empty array if none found or error.
- */
-export async function getActiveUserGoals(userId: string): Promise<UserGoal[]> {
-  try {
-    const { data, error } = await supabase
-      .from('goals') // Assuming table name is 'goals'
-      .select('*')
-      .eq('user_id', userId) // Corrected column name
-      .eq('is_active', true); // Filter for active goals
-
-    if (error) {
-      console.error('Error fetching active user goals:', error.message);
-      return [];
-    }
-    return data as UserGoal[];
-  } catch (err) {
-    console.error('Unexpected error in getActiveUserGoals:', err);
-    return [];
-  }
-}
-
+// Removed getActiveUserGoals function as goals are now part of UserProfile
 /**
  * Logs a user interaction to the 'interaction_logs' table.
  * @param log - The InteractionLog object to insert.

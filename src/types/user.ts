@@ -1,35 +1,49 @@
-/**
- * Represents the user's health profile information.
- */
 export interface UserProfile {
-  id: string; // Typically matches the auth user ID
-  createdAt: string; // ISO timestamp
-  updatedAt: string; // ISO timestamp
-  name?: string;
-  email?: string; // Should match auth email
-  age?: number;
-  sex?: 'male' | 'female' | 'other' | 'prefer_not_to_say';
-  heightCm?: number;
-  weightKg?: number;
-  activityLevel?: 'sedentary' | 'lightly_active' | 'moderately_active' | 'very_active' | 'extra_active';
-  // Add other relevant health metrics as needed (e.g., dietary restrictions, allergies)
-}
-
-/**
- * Represents a specific health or fitness goal set by the user.
- */
-export interface UserGoal {
   id: string;
-  userId: string;
-  createdAt: string; // ISO timestamp
-  updatedAt: string; // ISO timestamp
-  type: 'nutrition' | 'exercise' | 'weight' | 'general';
-  description: string;
-  targetValue?: number;
-  targetUnit?: string; // e.g., 'kcal', 'kg', 'minutes', 'steps'
-  startDate?: string; // ISO timestamp
-  endDate?: string; // ISO timestamp
-  isActive: boolean;
+  email: string;
+  name: string;
+
+  // Physical characteristics
+  age?: number;
+  gender?: 'male' | 'female' | 'other' | 'prefer-not-to-say';
+  height?: number; // in cm
+  weight?: number; // in kg
+
+  // Health goals
+  goal?: 'weight-loss' | 'maintenance' | 'muscle-gain' | 'performance' | 'general-health';
+  activityLevel?: 'sedentary' | 'light' | 'moderate' | 'active' | 'very-active';
+
+  // Dietary preferences
+  dietaryPreferences?: {
+    isVegetarian?: boolean;
+    isVegan?: boolean;
+    isGlutenFree?: boolean;
+    isDairyFree?: boolean;
+    allergies?: string[];
+    avoidedFoods?: string[];
+    preferredFoods?: string[];
+  };
+
+  // Calculated values
+  bmr?: number; // Basal Metabolic Rate
+  tdee?: number; // Total Daily Energy Expenditure
+
+  // Macro targets
+  macroTargets?: {
+    protein: number; // percentage
+    carbs: number; // percentage
+    fat: number; // percentage
+  };
+
+  // App preferences
+  preferences?: {
+    units: 'metric' | 'imperial';
+    theme: 'light' | 'dark' | 'system';
+    notifications: boolean;
+  };
+
+  createdAt: string;
+  updatedAt: string;
 }
 
 /**
