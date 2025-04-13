@@ -81,7 +81,7 @@ async function identifyTargetDate(state: AgentState): Promise<{
     try {
         // Use a simple LLM call to extract the date
         // Ensure OPENAI_API_KEY is set in environment
-        const dateExtractionModel = new ChatOpenAI({ modelName: "gpt-3.5-turbo", temperature: 0 });
+        const dateExtractionModel = new ChatOpenAI({ modelName: "gpt-4o-mini", temperature: 0 });
         const prompt = `Today's date is ${today}. Analyze the following user query and extract the specific date the user is asking about. Respond ONLY with the date in YYYY-MM-DD format. If no specific date is mentioned or implied other than today, respond with "${today}". Query: "${query}"`;
 
         const response = await dateExtractionModel.invoke(prompt);

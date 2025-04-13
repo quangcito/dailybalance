@@ -99,8 +99,8 @@ export async function getDailyFoodLogs(userId: string, targetDate: string): Prom
       .from('food_logs') // Use the actual table name
       .select('*')
       .eq('user_id', userId) // Filter by user ID (assuming DB column is user_id)
-      .gte('timestamp', startTime) // Filter by timestamp >= start of day
-      .lt('timestamp', endTime); // Filter by timestamp < start of next day
+      .gte('logged_at', startTime) // Filter by timestamp >= start of day
+      .lt('logged_at', endTime); // Filter by timestamp < start of next day
 
     if (error) {
       console.error(`Error fetching daily food logs for userId ${userId}, date ${targetDate}:`, error.message);
@@ -132,8 +132,8 @@ export async function getDailyExerciseLogs(userId: string, targetDate: string): 
       .from('exercise_logs') // Use the actual table name
       .select('*')
       .eq('user_id', userId) // Filter by user ID
-      .gte('start_time', startTime) // Filter by start_time >= start of day
-      .lt('start_time', endTime); // Filter by start_time < start of next day
+      .gte('logged_at', startTime) // Filter by logged_at >= start of day
+      .lt('logged_at', endTime); // Filter by logged_at < start of next day
 
     if (error) {
       console.error(`Error fetching daily exercise logs for userId ${userId}, date ${targetDate}:`, error.message);
@@ -177,6 +177,224 @@ export async function getDailyInteractionLogs(userId: string, targetDate: string
     return (data || []) as InteractionLog[];
   } catch (err) {
     console.error('Unexpected error in getDailyInteractionLogs:', err);
+    return [];
+  }
+}
+
+// --- NEW FUNCTIONS FOR SAVING LOGS WITH EMBEDDINGS ---
+
+import { generateEmbedding } from '../utils/embeddings'; // Import embedding utility
+
+/**
+* Saves a food log entry along with its embedding to the 'food_logs' table.
+* @param log - The FoodLog object to insert.
+*/
+export async function saveFoodLog(log: FoodLog): Promise<void> {
+console.log(`[saveFoodLog] Attempting to save food log for user: ${log.userId}`);
+
+// 1. Prepare text for embedding
+const textToEmbed = `${log.name || ''} (${log.mealType || 'Unknown Meal'})`; // Combine name and meal type
+
+// 2. Generate embedding
+const embedding = await generateEmbedding(textToEmbed);
+
+if (!embedding) {
+  console.error(`[saveFoodLog] Failed to generate embedding for food log. Saving without embedding.`);
+  // Decide if saving without embedding is acceptable or should throw error
+}
+
+// 3. Prepare DB entry (map camelCase to snake_case if needed, include embedding)
+// Assuming DB columns are snake_case based on previous patterns
+const dbLogEntry = {
+  // Map required fields from FoodLog type
+  user_id: log.userId,
+  name: log.name,
+  calories: log.calories,
+  logged_at: log.loggedAt || new Date().toISOString(), // Default to now if not provided
+  date: log.date || new Date().toISOString().split('T')[0], // Default to today if not provided
+  source: log.source || 'unknown', // Default source
+
+  // Map optional fields
+  description: log.description,
+  portion_size: log.portionSize,
+  meal_type: log.mealType,
+  macros: log.macros, // Assumes JSONB column
+  micronutrients: log.micronutrients, // Assumes JSONB column
+
+  // Add the embedding (will be null if generation failed)
+  embedding: embedding,
+};
+
+ // Remove undefined fields to avoid inserting nulls unintentionally
+ // Use type assertion to help TypeScript with indexing
+ Object.keys(dbLogEntry).forEach(key => {
+   const typedKey = key as keyof typeof dbLogEntry;
+   if (dbLogEntry[typedKey] === undefined) {
+     delete dbLogEntry[typedKey];
+   }
+ });
+
+
+// 4. Insert into Supabase
+try {
+  const { error } = await supabase
+    .from('food_logs')
+    .insert([dbLogEntry]);
+
+  if (error) {
+    console.error('[saveFoodLog] Error saving food log:', error.message);
+    // Optionally re-throw or handle error
+  } else {
+    console.log(`[saveFoodLog] Food log saved successfully for user: ${log.userId}`);
+  }
+} catch (err) {
+  console.error('[saveFoodLog] Unexpected error saving food log:', err);
+}
+} // <-- Add missing closing brace for saveFoodLog function
+
+/**
+ * Saves an exercise log entry along with its embedding to the 'exercise_logs' table.
+ * @param log - The ExerciseLog object to insert.
+ */
+export async function saveExerciseLog(log: ExerciseLog): Promise<void> {
+  console.log(`[saveExerciseLog] Attempting to save exercise log for user: ${log.userId}`);
+
+  // 1. Prepare text for embedding
+  const textToEmbed = `${log.name || ''} (${log.type || 'Unknown Type'})`; // Combine name and type
+
+  // 2. Generate embedding
+  const embedding = await generateEmbedding(textToEmbed);
+
+  if (!embedding) {
+    console.error(`[saveExerciseLog] Failed to generate embedding for exercise log. Saving without embedding.`);
+    // Decide if saving without embedding is acceptable or should throw error
+  }
+
+  // 3. Prepare DB entry (map camelCase to snake_case if needed, include embedding)
+  const dbLogEntry = {
+    // Map required fields from ExerciseLog type
+    user_id: log.userId,
+    name: log.name,
+    type: log.type,
+    logged_at: log.loggedAt || new Date().toISOString(),
+    date: log.date || new Date().toISOString().split('T')[0],
+    source: log.source || 'unknown',
+
+    // Map optional fields
+    duration: log.duration,
+    intensity: log.intensity,
+    calories_burned: log.caloriesBurned,
+    strength_details: log.strengthDetails, // Assumes JSONB
+    cardio_details: log.cardioDetails, // Assumes JSONB
+
+    // Add the embedding (will be null if generation failed)
+    embedding: embedding,
+  };
+
+  // Remove undefined fields
+  Object.keys(dbLogEntry).forEach(key => {
+    const typedKey = key as keyof typeof dbLogEntry;
+    if (dbLogEntry[typedKey] === undefined) {
+      delete dbLogEntry[typedKey];
+    }
+
+  });
+
+  // 4. Insert into Supabase
+  try {
+    const { error } = await supabase
+      .from('exercise_logs')
+      .insert([dbLogEntry]);
+
+    if (error) {
+      console.error('[saveExerciseLog] Error saving exercise log:', error.message);
+    } else {
+      console.log(`[saveExerciseLog] Exercise log saved successfully for user: ${log.userId}`);
+    }
+  } catch (err) {
+    console.error('[saveExerciseLog] Unexpected error saving exercise log:', err);
+  }
+}
+
+// --- NEW FUNCTIONS FOR VECTOR SEARCH ---
+
+/**
+ * Searches for relevant food logs based on embedding similarity using pgvector.
+ * Assumes a 'match_documents' function exists in Supabase for vector search.
+ * Adjust function name and parameters based on your actual Supabase setup.
+ *
+ * @param userId The ID of the user whose logs to search.
+ * @param queryEmbedding The vector embedding of the user's query.
+ * @param count The maximum number of similar logs to retrieve.
+ * @returns An array of relevant FoodLog objects.
+ */
+export async function searchFoodLogs(userId: string, queryEmbedding: number[], count: number): Promise<FoodLog[]> {
+  console.log(`[searchFoodLogs] Searching for ${count} relevant food logs for user ${userId}`);
+  if (!queryEmbedding || queryEmbedding.length === 0) {
+    console.warn("[searchFoodLogs] Query embedding is empty. Skipping search.");
+    return [];
+  }
+  try {
+    // Note: Adjust 'match_food_logs' and parameters if your RPC function is different.
+    // This assumes an RPC function optimized for the food_logs table.
+    // Alternatively, use a generic 'match_documents' with table name in filter/params.
+    const { data, error } = await supabase.rpc('match_documents', { // Using generic name, adjust if needed
+      query_embedding: queryEmbedding,
+      match_count: count,
+      filter: { user_id: userId, table_name: 'food_logs' } // Example filter, adjust based on RPC function
+      // Ensure your RPC function handles filtering correctly (e.g., WHERE user_id = filter->>'user_id')
+      // And selects from the correct table based on filter->>'table_name' or similar.
+    });
+
+    if (error) {
+      console.error('[searchFoodLogs] Error performing vector search:', error);
+      return [];
+    }
+
+    console.log(`[searchFoodLogs] Found ${data?.length ?? 0} potentially relevant logs.`);
+    // The RPC function should return rows matching the FoodLog structure.
+    // Casting assumes the RPC function returns the correct columns.
+    return (data || []) as FoodLog[];
+  } catch (err) {
+    console.error('[searchFoodLogs] Unexpected error during vector search:', err);
+    return [];
+  }
+}
+
+/**
+ * Searches for relevant exercise logs based on embedding similarity using pgvector.
+ * Assumes a 'match_documents' function exists in Supabase for vector search.
+ * Adjust function name and parameters based on your actual Supabase setup.
+ *
+ * @param userId The ID of the user whose logs to search.
+ * @param queryEmbedding The vector embedding of the user's query.
+ * @param count The maximum number of similar logs to retrieve.
+ * @returns An array of relevant ExerciseLog objects.
+ */
+export async function searchExerciseLogs(userId: string, queryEmbedding: number[], count: number): Promise<ExerciseLog[]> {
+   console.log(`[searchExerciseLogs] Searching for ${count} relevant exercise logs for user ${userId}`);
+   if (!queryEmbedding || queryEmbedding.length === 0) {
+    console.warn("[searchExerciseLogs] Query embedding is empty. Skipping search.");
+    return [];
+  }
+  try {
+    // Adjust RPC function name/params as needed
+    const { data, error } = await supabase.rpc('match_documents', { // Using generic name, adjust if needed
+      query_embedding: queryEmbedding,
+      match_count: count,
+      filter: { user_id: userId, table_name: 'exercise_logs' } // Example filter
+    });
+
+    if (error) {
+      console.error('[searchExerciseLogs] Error performing vector search:', error);
+      return [];
+    }
+
+     console.log(`[searchExerciseLogs] Found ${data?.length ?? 0} potentially relevant logs.`);
+    // Casting assumes the RPC function returns the correct columns.
+    return (data || []) as ExerciseLog[];
+  } catch (err) {
+    console.error('[searchExerciseLogs] Unexpected error during vector search:', err);
     return [];
   }
 }
