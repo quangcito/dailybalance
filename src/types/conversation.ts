@@ -26,3 +26,27 @@ export interface Source {
   /** Optional snippet or relevant text from the source. */
   snippet?: string;
 }
+
+/**
+ * Represents a message sent by the user in the conversation UI.
+ */
+export interface UserMessage {
+  role: 'user';
+  query: string;
+  timestamp: string; // ISO timestamp string
+}
+
+/**
+ * Represents a message sent by the system (Answer Engine) in the conversation UI.
+ */
+export interface SystemMessage {
+  role: 'system';
+  answer: StructuredAnswer;
+  sources: Source[];
+  timestamp: string; // ISO timestamp string
+}
+
+/**
+ * Union type for messages displayed in the frontend conversation history.
+ */
+export type ConversationMessage = UserMessage | SystemMessage;
