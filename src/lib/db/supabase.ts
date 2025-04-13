@@ -51,8 +51,8 @@ export async function getActiveUserGoals(userId: string): Promise<UserGoal[]> {
     const { data, error } = await supabase
       .from('goals') // Assuming table name is 'goals'
       .select('*')
-      .eq('userId', userId)
-      .eq('isActive', true); // Filter for active goals
+      .eq('user_id', userId) // Corrected column name
+      .eq('is_active', true); // Filter for active goals
 
     if (error) {
       console.error('Error fetching active user goals:', error.message);

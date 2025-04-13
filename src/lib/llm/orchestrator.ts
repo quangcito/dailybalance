@@ -8,8 +8,9 @@ import { getFactualInformation, FactualInformation } from './knowledge-layer.ts'
 import { generatePersonalizedInsights, ReasoningOutput } from './reasoning-layer.ts';
 import { generateFinalResponse } from './conversation-layer.ts';
 import { UserProfile, UserGoal } from '@/types/user'; // Import user types
-// TODO: Import functions to fetch user profile/goals if needed
-// import { supabaseClient } from '../db/supabase';
+import { getUserProfile, getActiveUserGoals } from '../db/supabase'; // Import fetch functions
+
+// TODO: Import functions to fetch user profile/goals if needed - DONE
 // import { pineconeClient } from '../vector-db/pinecone';
 // import { redisClient } from '../cache/redis';
 
@@ -22,6 +23,10 @@ export interface AgentState { // Add export keyword
   reasoningResponse?: ReasoningOutput | null; // Use type from reasoning-layer
   structuredAnswer?: StructuredAnswer; // Final output
   current_step?: string; // To track the current node
+  // Add fields for fetched user data
+  userProfile?: UserProfile | null;
+  userGoals?: UserGoal[];
+  needsPersonalization?: boolean; // Flag from analysis step
 }
 
 // --- Define Nodes ---
@@ -43,7 +48,49 @@ async function processInput(state: AgentState): Promise<{
     knowledgeResponse: undefined,
     reasoningResponse: undefined,
     structuredAnswer: undefined,
-   };
+  };
+}
+
+// --- NEW NODE: Analyze Query for Personalization ---
+// Simple keyword-based check for now
+async function analyzeQueryForPersonalization(state: AgentState): Promise<{
+   current_step: string;
+   needsPersonalization: boolean;
+}> {
+   console.log("--- Step: Analyze Query for Personalization ---");
+   const lastMessage = state.messages[state.messages.length - 1];
+   const query = typeof lastMessage.content === 'string' ? lastMessage.content.toLowerCase() : "";
+   // Simple keyword check - refine later if needed
+   const keywords = ["i ", " me ", " my ", "goal", "preference", "diet", "weight", "plan", "should i"];
+   const needsPersonalization = keywords.some(keyword => query.includes(keyword));
+   console.log("Needs Personalization:", needsPersonalization);
+   return { current_step: "analyzeQueryForPersonalization", needsPersonalization };
+}
+
+// --- NEW NODE: Fetch User Data (Conditional) ---
+async function fetchUserData(state: AgentState): Promise<{
+   current_step: string;
+   userProfile: UserProfile | null;
+   userGoals: UserGoal[];
+}> {
+   console.log("--- Step: Fetch User Data ---");
+   if (!state.userId) {
+       console.log("No userId provided, skipping user data fetch.");
+       return { current_step: "fetchUserData", userProfile: null, userGoals: [] };
+   }
+   console.log(`Fetching data for userId: ${state.userId}`);
+   try {
+       const [profile, goals] = await Promise.all([
+           getUserProfile(state.userId),
+           getActiveUserGoals(state.userId)
+       ]);
+       console.log("Fetched Profile:", profile ? 'Yes' : 'No');
+       console.log("Fetched Goals:", goals.length);
+       return { current_step: "fetchUserData", userProfile: profile, userGoals: goals };
+   } catch (error) {
+       console.error("Error fetching user data:", error);
+       return { current_step: "fetchUserData", userProfile: null, userGoals: [] }; // Return defaults on error
+   }
 }
 
 // Node: Knowledge Layer
@@ -74,12 +121,11 @@ async function runReasoningLayer(state: AgentState): Promise<{
   const knowledgeInfo = state.knowledgeResponse;
   const userId = state.userId;
 
-  // TODO: Fetch UserProfile and UserGoals based on userId
-  // This likely requires interacting with Supabase here or ensuring they are passed in the initial state.
-  const userProfile: UserProfile | null = null; // Placeholder
-  const userGoals: UserGoal[] = []; // Placeholder
+  // UserProfile and UserGoals are now potentially populated in the state
+  const userProfile = state.userProfile ?? null;
+  const userGoals = state.userGoals ?? [];
   // TODO: Determine actual time context (e.g., based on server time or user input)
-  const timeContext = "Midday"; // Placeholder
+  const timeContext = "Midday"; // Placeholder - Keep for now
 
   if (!knowledgeInfo) {
       console.warn("Reasoning Layer: Knowledge information is missing.");
@@ -136,12 +182,16 @@ async function runConversationLayer(state: AgentState): Promise<{
 
 // --- Define Edges (Conditional Logic) ---
 
-// Example conditional edge: Decide next step after processing input
-function decideNextStep(state: AgentState): string {
-  console.log("--- Step: Decide Next Step ---");
-  // TODO: Implement logic to decide the flow (e.g., based on input type, history)
-  // For now, linear flow: Input -> Knowledge -> Reasoning -> Conversation
-  return "runKnowledgeLayer";
+// Conditional edge: Decide whether to fetch user data
+function decideIfFetchUserData(state: AgentState): string {
+    console.log("--- Step: Decide Fetch User Data ---");
+    if (state.needsPersonalization && state.userId) {
+        console.log("Decision: Fetch user data.");
+        return "fetchUserData";
+    } else {
+        console.log("Decision: Skip user data fetch.");
+        return "runKnowledgeLayer";
+    }
 }
 
 // --- Build the Graph ---
@@ -179,14 +229,29 @@ const graphArgs: StateGraphArgs<AgentState> = {
       value: (x?: string, y?: string) => y ?? x,
       default: () => undefined,
     },
+    // Add channels for new state fields
+    userProfile: {
+      value: (x?: UserProfile | null, y?: UserProfile | null) => y ?? x,
+      default: () => undefined,
+    },
+    userGoals: {
+      value: (x?: UserGoal[], y?: UserGoal[]) => y ?? x,
+      default: () => [],
+    },
+    needsPersonalization: {
+       value: (x?: boolean, y?: boolean) => y ?? x,
+       default: () => false,
+    }
   },
 };
 
 // Instantiate the graph with the explicit args type
 const workflow = new StateGraph<AgentState>(graphArgs);
 
-// Add nodes (using 'as any' to bypass type errors)
+// Add nodes (using 'as any' to bypass type errors for now)
 workflow.addNode("processInput", processInput as any);
+workflow.addNode("analyzeQueryForPersonalization", analyzeQueryForPersonalization as any); // New node
+workflow.addNode("fetchUserData", fetchUserData as any); // New node
 workflow.addNode("runKnowledgeLayer", runKnowledgeLayer as any);
 workflow.addNode("runReasoningLayer", runReasoningLayer as any);
 workflow.addNode("runConversationLayer", runConversationLayer as any);
@@ -194,17 +259,23 @@ workflow.addNode("runConversationLayer", runConversationLayer as any);
 // Set entry point (without type assertions)
 workflow.setEntryPoint("processInput" as any);
 
-// Add edges (without type assertions)
+// Add edges (without type assertions for now)
+workflow.addEdge("processInput" as any, "analyzeQueryForPersonalization" as any); // Input -> Analyze
+
+// Conditional edge after analysis
 workflow.addConditionalEdges(
-  "processInput" as any,
-  decideNextStep,
+  "analyzeQueryForPersonalization" as any,
+  decideIfFetchUserData, // Use the new decision function
   {
-    runKnowledgeLayer: "runKnowledgeLayer" as any,
+    fetchUserData: "fetchUserData" as any, // If yes, fetch data
+    runKnowledgeLayer: "runKnowledgeLayer" as any, // If no, skip to knowledge
   }
 );
-workflow.addEdge("runKnowledgeLayer" as any, "runReasoningLayer" as any);
-workflow.addEdge("runReasoningLayer" as any, "runConversationLayer" as any);
-workflow.addEdge("runConversationLayer" as any, END);
+
+workflow.addEdge("fetchUserData" as any, "runKnowledgeLayer" as any); // After fetch -> Knowledge
+workflow.addEdge("runKnowledgeLayer" as any, "runReasoningLayer" as any); // Knowledge -> Reasoning
+workflow.addEdge("runReasoningLayer" as any, "runConversationLayer" as any); // Reasoning -> Conversation
+workflow.addEdge("runConversationLayer" as any, END); // Conversation -> End
 
 // Compile the graph
 export const app = workflow.compile();
