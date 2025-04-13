@@ -250,8 +250,39 @@ export async function getDailyInteractionLogs(userId: string, targetDate: string
       return [];
     }
     console.log(`[getDailyInteractionLogs] Found ${data?.length ?? 0} logs.`);
-    // InteractionLog type should already align with DB schema based on previous steps
-    return (data || []) as InteractionLog[];
+    // Manually map and parse llm_response to ensure correct type
+    const mappedData: InteractionLog[] = (data || []).map(item => {
+        let parsedLlmResponse: any = null; // Use 'any' temporarily for parsing flexibility
+        if (item.llm_response) {
+            if (typeof item.llm_response === 'string') {
+                try {
+                    parsedLlmResponse = JSON.parse(item.llm_response);
+                } catch (e) {
+                    console.error(`[getDailyInteractionLogs] Failed to parse llm_response JSON string for log ${item.id}:`, e);
+                    // Keep parsedLlmResponse as null if parsing fails
+                }
+            } else if (typeof item.llm_response === 'object') {
+                // Assume it's already a valid object (or null)
+                parsedLlmResponse = item.llm_response;
+            }
+        }
+
+        // Construct the InteractionLog object, mapping snake_case to camelCase
+        return {
+            id: item.id,
+            userId: item.user_id,
+            sessionId: item.session_id,
+            timestamp: item.timestamp,
+            query: item.query,
+            llmResponse: parsedLlmResponse, // Use the potentially parsed object
+            sources: item.sources, // Assuming 'sources' column exists and is JSONB/array
+            userFeedback: item.user_feedback,
+            metadata: item.metadata,
+            // embedding is likely not selected or needed here
+        };
+    });
+
+    return mappedData;
   } catch (err) {
     console.error('Unexpected error in getDailyInteractionLogs:', err);
     return [];
