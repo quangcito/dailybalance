@@ -1,8 +1,13 @@
-import { queryPerplexity } from './perplexity.ts';
+import { queryPerplexity, PerplexityQueryResult } from './perplexity'; // Import the new result type
+import { Source } from '@/types/conversation'; // Import Source type
 
-// Define a specific type for the output of this layer, if needed.
-// For now, we'll assume it returns a string or structured data based on Perplexity's response.
-export type FactualInformation = string | Record<string, any> | null;
+/**
+ * Defines the output structure of the Knowledge Layer, including factual content and sources.
+ */
+export interface KnowledgeLayerOutput {
+  content: string | null; // Keep content flexible for now (string or structured)
+  sources: Source[];
+}
 
 const KNOWLEDGE_LAYER_SYSTEM_PROMPT = `You are a factual information retrieval assistant specializing in health, nutrition, and exercise. Provide concise, accurate information based on the user's query. Focus on verifiable facts, definitions, nutritional data (calories, macros, vitamins), exercise details (muscles worked, typical duration, intensity), and general health concepts. Avoid opinions, personal advice, or conversational filler. If the query is ambiguous or outside your domain, state that clearly.`;
 
@@ -13,15 +18,15 @@ const KNOWLEDGE_LAYER_SYSTEM_PROMPT = `You are a factual information retrieval a
  * @param query - The user's query string.
  * @returns A string containing factual information, structured data, or null if an error occurs or no relevant info is found.
  */
-export async function getFactualInformation(query: string): Promise<FactualInformation> {
+export async function getFactualInformation(query: string): Promise<KnowledgeLayerOutput> {
   console.log(`Knowledge Layer: Retrieving factual info for query: "${query}"`);
 
   try {
-    const result = await queryPerplexity(query, KNOWLEDGE_LAYER_SYSTEM_PROMPT);
+    const result: PerplexityQueryResult | null = await queryPerplexity(query, KNOWLEDGE_LAYER_SYSTEM_PROMPT);
 
-    if (result === null) {
-      console.error('Knowledge Layer: Failed to get response from Perplexity.');
-      return null;
+    if (result === null || result.content === null) {
+      console.error('Knowledge Layer: Failed to get valid response from Perplexity.');
+      return { content: null, sources: [] }; // Return empty structure on failure
     }
 
     // TODO: Potential post-processing of the Perplexity response.
@@ -29,11 +34,11 @@ export async function getFactualInformation(query: string): Promise<FactualInfor
     // - Could validate or filter the information.
     // For now, return the raw string content.
     console.log(`Knowledge Layer: Received response from Perplexity.`);
-    return result;
+    return { content: result.content, sources: result.sources };
 
   } catch (error) {
     console.error('Knowledge Layer: Unexpected error retrieving factual information:', error);
-    return null;
+    return { content: null, sources: [] }; // Return empty structure on error
   }
 }
 

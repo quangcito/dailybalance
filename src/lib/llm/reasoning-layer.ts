@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { UserProfile, InteractionLog } from '@/types/user'; // Added InteractionLog
 import { FoodLog } from '@/types/nutrition';
 import { ExerciseLog } from '@/types/exercise';
-import { FactualInformation } from './knowledge-layer.js';
+import { KnowledgeLayerOutput } from './knowledge-layer'; // Updated import
 import { saveFoodLog, saveExerciseLog } from '../db/supabase.ts'; // Import save functions
 
 // Ensure environment variables are set
@@ -129,7 +129,7 @@ Focus on accurately identifying the log intent (Step 1) and then generating the 
  */
 export async function generatePersonalizedInsights(
   query: string,
-  factualInfo: FactualInformation,
+  knowledgeOutput: KnowledgeLayerOutput, // Updated type and name
   userProfile: UserProfile | null,
   timeContext: string, // e.g., "Morning", "Midday", "Evening"
   dailyFoodLogs: FoodLog[],
@@ -149,7 +149,7 @@ export async function generatePersonalizedInsights(
   // Construct the prompt for the LLM
   const userMessageContent = `
 User Query: ${query}
-Factual Information: ${JSON.stringify(factualInfo)}
+Factual Information: ${JSON.stringify(knowledgeOutput.content)}
 User Profile: ${JSON.stringify(userProfile)}
 User Goals: (Now part of User Profile) ${JSON.stringify(userProfile?.goal)}
 Time Context: ${timeContext}

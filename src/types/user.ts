@@ -1,3 +1,5 @@
+import { Source, StructuredAnswer } from './conversation'; // Import Source and StructuredAnswer
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -55,7 +57,8 @@ export interface InteractionLog {
   sessionId?: string;
   timestamp: string; // ISO timestamp
   query: string;
-  llmResponse?: Record<string, any>; // Store the structured answer or relevant parts
+  llmResponse?: StructuredAnswer; // Use the specific type
+  sources?: Source[]; // NEW: Store sources used for this response
   userFeedback?: 'positive' | 'negative' | 'neutral' | string; // Could be free text
   metadata?: Record<string, any>; // Any extra context (e.g., time of day context used)
 }

@@ -20,7 +20,7 @@ const AnswerCard: React.FC<AnswerCardProps> = ({ answer, sources }) => {
           <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Suggestions:</p>
           <ul className="list-disc list-inside space-y-1">
             {answer.suggestions.map((suggestion, index) => (
-              <li key={index} className="text-sm text-blue-600 dark:text-blue-400 hover:underline cursor-pointer">
+              <li key={index} className="text-sm"> {/* Removed blue color, hover underline, and pointer cursor */}
                 {/* TODO: Make suggestions clickable */}
                 {suggestion}
               </li>

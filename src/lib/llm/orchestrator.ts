@@ -4,7 +4,7 @@ import { HumanMessage, AIMessage, BaseMessage } from "@langchain/core/messages";
 import { RunnableLambda } from "@langchain/core/runnables";
 import { StructuredAnswer, Source } from "@/types/conversation"; // Import existing types
 
-import { getFactualInformation, FactualInformation } from './knowledge-layer.ts';
+import { getFactualInformation, KnowledgeLayerOutput } from './knowledge-layer'; // Updated import
 import { generatePersonalizedInsights, ReasoningOutput, AgenticLogIntent } from './reasoning-layer.ts'; // Import AgenticLogIntent
 import { generateFinalResponse } from './conversation-layer.ts';
 import { UserProfile, InteractionLog } from '@/types/user';
@@ -36,9 +36,10 @@ export interface AgentState { // Add export keyword
   userId?: string; // Optional: Add if needed for context
   conversationId?: string; // Optional: Add if needed for context
   targetDate?: string; // NEW: Target date for context (YYYY-MM-DD)
-  knowledgeResponse?: FactualInformation; // Use type from knowledge-layer
+  knowledgeResponse?: KnowledgeLayerOutput; // Updated type (contains content + sources)
   reasoningResponse?: ReasoningOutput | null; // Use type from reasoning-layer
-  structuredAnswer?: StructuredAnswer; // Final output
+  structuredAnswer?: StructuredAnswer; // Final output (will contain text with citations)
+  sources?: Source[]; // NEW: To hold sources from knowledge layer for final output
   current_step?: string; // To track the current node
   // Add fields for fetched user data
   userProfile?: UserProfile | null;
@@ -351,10 +352,15 @@ async function runKnowledgeLayer(state: AgentState): Promise<Partial<AgentState>
   const lastMessage = state.messages[state.messages.length - 1];
   const query = typeof lastMessage.content === 'string' ? lastMessage.content : JSON.stringify(lastMessage.content); // Handle potential non-string content
 
-  const knowledgeResponse = await getFactualInformation(query);
+  const knowledgeOutput = await getFactualInformation(query); // Renamed variable for clarity
 
-  console.log("Knowledge Response:", knowledgeResponse);
-  return { current_step: "runKnowledgeLayer", knowledgeResponse };
+  console.log("Knowledge Response:", knowledgeOutput);
+  // Assign the entire KnowledgeLayerOutput object and extract sources
+  return {
+      current_step: "runKnowledgeLayer",
+      knowledgeResponse: knowledgeOutput,
+      sources: knowledgeOutput?.sources ?? [] // Populate sources state
+  };
 }
 
 // Node: Calculate Net Calories
@@ -381,7 +387,7 @@ async function runReasoningLayer(state: AgentState): Promise<Partial<AgentState>
   console.log("--- Step: Reasoning Layer ---");
   const lastMessage = state.messages[state.messages.length - 1];
   const query = typeof lastMessage.content === 'string' ? lastMessage.content : JSON.stringify(lastMessage.content);
-  const knowledgeInfo = state.knowledgeResponse;
+  const knowledgeOutput = state.knowledgeResponse; // Get the full output object
   const userId = state.userId;
 
   // UserProfile and UserGoals are now potentially populated in the state
@@ -403,15 +409,16 @@ async function runReasoningLayer(state: AgentState): Promise<Partial<AgentState>
   const netCalories = state.netCalories;
 
 
-  if (!knowledgeInfo) {
-      console.warn("Reasoning Layer: Knowledge information is missing.");
-      // Decide how to handle missing info - return error, default response, etc.
-      return { current_step: "runReasoningLayer", reasoningResponse: { insights: "Could not retrieve factual information.", error: "Missing knowledge data." } };
+  // Check if knowledgeResponse or its content is missing
+  if (!knowledgeOutput || knowledgeOutput.content === null) {
+      console.warn("Reasoning Layer: Knowledge information is missing or invalid.");
+      // Return error in reasoningResponse
+      return { current_step: "runReasoningLayer", reasoningResponse: { insights: "Could not retrieve factual information.", error: "Missing or invalid knowledge data." } };
   }
 
   const reasoningResponse = await generatePersonalizedInsights(
       query,
-      knowledgeInfo,
+      knowledgeOutput, // Pass the full KnowledgeLayerOutput object
       userProfile,
       timeContext,
       dailyFoodLogs, // Pass daily logs from state
@@ -447,22 +454,7 @@ async function runConversationLayer(state: AgentState): Promise<Partial<AgentSta
   const dailyCaloriesBurned = state.dailyCaloriesBurned; // Get from state
   const netCalories = state.netCalories; // Get from state
   const targetDate = state.targetDate ?? new Date().toISOString().split('T')[0]; // Get target date
-
-  // --- Calculate current daily calories --- (REMOVED - Now calculated earlier and passed in state)
-  // let currentDailyCalories = 0;
-  // try {
-  //     // Fetch the LATEST logs for the day, including any just saved
-  //     const currentFoodLogs = await getDailyFoodLogs(userId, targetDate);
-  //     if (currentFoodLogs.length > 0) {
-  //         currentDailyCalories = currentFoodLogs.reduce((sum, log) => sum + (log.calories || 0), 0);
-  //     }
-  //     console.log(`[Conversation Layer] Recalculated daily calories: ${currentDailyCalories}`);
-  // } catch (fetchError) {
-  //      console.error("[Conversation Layer] Error fetching latest food logs for calorie calculation:", fetchError);
-  //      // Proceed with 0 or potentially stale data if needed, or handle error
-  // }
-  // --- End calorie calculation ---
-
+  const sources = state.sources ?? []; // Get sources from state
 
   // --- Prepare data for Conversation Layer ---
   // Pass reasoning output directly. The conversation layer will use derivedData from it.
@@ -470,7 +462,7 @@ async function runConversationLayer(state: AgentState): Promise<Partial<AgentSta
   const finalReasoningData = reasoningOutput ?? { insights: '', error: 'Reasoning output was null' };
 
 
-  // Call the actual conversation layer function, passing the reasoning output and the calculated calorie data from state
+  // Call the actual conversation layer function, passing the reasoning output, calculated calorie data, and sources from state
   const finalResponse = await generateFinalResponse(
       userId,
       conversationId,
@@ -479,7 +471,8 @@ async function runConversationLayer(state: AgentState): Promise<Partial<AgentSta
       dailyCaloriesConsumed, // Pass calculated value from state
       dailyCaloriesBurned,   // Pass calculated value from state
       netCalories,         // Pass calculated value from state
-      tdee                   // Pass user's TDEE from state
+      tdee,                  // Pass user's TDEE from state
+      sources                // Pass sources from state
   );
 
   console.log("Final Response:", finalResponse);
@@ -494,7 +487,8 @@ async function runConversationLayer(state: AgentState): Promise<Partial<AgentSta
       sessionId: conversationId, // Use conversationId as sessionId
       timestamp: new Date().toISOString(),
       query: query,
-      llmResponse: finalResponse, // Store the full structured answer
+      llmResponse: finalResponse, // Store the full structured answer (text + dataSummary)
+      sources: sources, // NEW: Store the sources used for this response
       // userFeedback: undefined, // Not captured here
       // metadata: undefined, // Add if needed
     };
@@ -684,9 +678,13 @@ const graphArgs: StateGraphArgs<AgentState> = {
       value: (x?: string, y?: string) => y ?? x,
       default: () => undefined,
     },
-    knowledgeResponse: { // Type is FactualInformation | undefined
-      value: (x?: FactualInformation, y?: FactualInformation) => y ?? x,
+    knowledgeResponse: { // Type is KnowledgeLayerOutput | undefined
+      value: (x?: KnowledgeLayerOutput, y?: KnowledgeLayerOutput) => y ?? x,
       default: () => undefined,
+    },
+    sources: { // NEW Channel for sources
+       value: (x?: Source[], y?: Source[]) => y ?? x,
+       default: () => [],
     },
     reasoningResponse: { // Type is ReasoningOutput | null | undefined
       value: (x?: ReasoningOutput | null, y?: ReasoningOutput | null) => y ?? x,
