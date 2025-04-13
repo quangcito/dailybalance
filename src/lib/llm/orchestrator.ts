@@ -5,7 +5,7 @@ import { RunnableLambda } from "@langchain/core/runnables";
 import { StructuredAnswer, Source } from "@/types/conversation"; // Import existing types
 
 import { getFactualInformation, FactualInformation } from './knowledge-layer.ts';
-import { generatePersonalizedInsights, ReasoningOutput } from './reasoning-layer.ts';
+import { generatePersonalizedInsights, ReasoningOutput, AgenticLogIntent } from './reasoning-layer.ts'; // Import AgenticLogIntent
 import { generateFinalResponse } from './conversation-layer.ts';
 import { UserProfile, InteractionLog } from '@/types/user';
 import { FoodLog } from '@/types/nutrition';
@@ -16,8 +16,15 @@ import {
   getDailyFoodLogs,
   getDailyExerciseLogs,
   getDailyInteractionLogs,
+  searchFoodLogs, // NEW: Import vector search
+  searchExerciseLogs, // NEW: Import vector search
+  saveFoodLog, // NEW: Import save function
+  saveExerciseLog, // NEW: Import save function
 } from '../db/supabase'; // Import fetch and log functions
+import { searchInteractionLogs } from '../vector-db/pinecone'; // NEW: Import vector search
 import { calculateBMR, calculateTDEE } from '../utils/calculations'; // Import calculation functions
+import { generateEmbedding } from '../utils/embeddings'; // NEW: Import embedding utility
+import { enrichLogIntent } from '../log-enrichment'; // NEW: Import enrichment function
 
 // TODO: Import functions to fetch user profile/goals if needed - DONE
 // import { pineconeClient } from '../vector-db/pinecone';
@@ -41,18 +48,20 @@ export interface AgentState { // Add export keyword
   dailyFoodLogs?: FoodLog[];
   dailyExerciseLogs?: ExerciseLog[];
   dailyInteractionLogs?: InteractionLog[];
+  // Add fields for retrieved historical context
+  historicalFoodLogs?: FoodLog[];
+  historicalExerciseLogs?: ExerciseLog[];
+  historicalInteractionLogs?: any[]; // Pinecone search returns metadata objects
+  // NEW: State to hold fully enriched logs ready for saving
+  enrichedAgenticLogs?: (Omit<FoodLog, 'id' | 'createdAt' | 'updatedAt'> | Omit<ExerciseLog, 'id' | 'createdAt' | 'updatedAt'>)[];
+  // Ensure calculatedDailyCalories state field is removed
 }
 
 // --- Define Nodes ---
 
 // Node: Entry Point (e.g., process user input)
 // Returns updates for specific channels
-async function processInput(state: AgentState): Promise<{
-    current_step: string;
-    knowledgeResponse: undefined;
-    reasoningResponse: undefined;
-    structuredAnswer: undefined;
-}> {
+async function processInput(state: AgentState): Promise<Partial<AgentState>> {
   console.log("--- Step: Process Input ---");
   const lastMessage = state.messages[state.messages.length - 1];
   console.log("User Input:", lastMessage.content);
@@ -62,14 +71,15 @@ async function processInput(state: AgentState): Promise<{
     knowledgeResponse: undefined,
     reasoningResponse: undefined,
     structuredAnswer: undefined,
+    // Clear historical logs for new input
+    historicalFoodLogs: [],
+    historicalExerciseLogs: [],
+    historicalInteractionLogs: [],
   };
 }
 
 // --- NEW NODE: Identify Target Date ---
-async function identifyTargetDate(state: AgentState): Promise<{
-    current_step: string;
-    targetDate: string;
-}> {
+async function identifyTargetDate(state: AgentState): Promise<Partial<AgentState>> {
     console.log("--- Step: Identify Target Date ---");
     const lastMessage = state.messages[state.messages.length - 1];
     const query = typeof lastMessage.content === 'string' ? lastMessage.content : "";
@@ -105,12 +115,7 @@ async function identifyTargetDate(state: AgentState): Promise<{
 }
 
 // --- NEW NODE: Fetch Daily Context ---
-async function fetchDailyContext(state: AgentState): Promise<{
-    current_step: string;
-    dailyFoodLogs: FoodLog[];
-    dailyExerciseLogs: ExerciseLog[];
-    dailyInteractionLogs: InteractionLog[];
-}> {
+async function fetchDailyContext(state: AgentState): Promise<Partial<AgentState>> {
     console.log("--- Step: Fetch Daily Context ---");
     const userId = state.userId;
     // Default to today if targetDate is somehow missing
@@ -157,14 +162,12 @@ async function fetchDailyContext(state: AgentState): Promise<{
     }
 }
 
+// Ensure calculateDailyCaloriesNode function is removed
 
 
 // --- NEW NODE: Analyze Query for Personalization ---
 // Simple keyword-based check for now
-async function analyzeQueryForPersonalization(state: AgentState): Promise<{
-   current_step: string;
-   needsPersonalization: boolean;
-}> {
+async function analyzeQueryForPersonalization(state: AgentState): Promise<Partial<AgentState>> {
    console.log("--- Step: Analyze Query for Personalization ---");
    const lastMessage = state.messages[state.messages.length - 1];
    const query = typeof lastMessage.content === 'string' ? lastMessage.content.toLowerCase() : "";
@@ -176,11 +179,7 @@ async function analyzeQueryForPersonalization(state: AgentState): Promise<{
 }
 
 // --- NEW NODE: Fetch User Data (Conditional) ---
-async function fetchUserData(state: AgentState): Promise<{
-   current_step: string;
-   userProfile: UserProfile | null;
-   // userGoals: UserGoal[]; // Removed
-}> {
+async function fetchUserData(state: AgentState): Promise<Partial<AgentState>> {
    console.log("--- Step: Fetch User Data ---");
    if (!state.userId) {
        console.log("No userId provided, skipping user data fetch.");
@@ -210,12 +209,77 @@ async function fetchUserData(state: AgentState): Promise<{
    }
 }
 
+// --- NEW NODE: Retrieve Historical Context ---
+async function retrieveHistoricalContext(state: AgentState): Promise<Partial<AgentState>> {
+  console.log("--- Step: Retrieve Historical Context ---");
+  const userId = state.userId;
+  const lastMessage = state.messages[state.messages.length - 1];
+  const query = typeof lastMessage?.content === 'string' ? lastMessage.content : "";
+  const HISTORICAL_COUNT = 5; // Number of historical logs to retrieve
+
+  if (!userId) {
+    console.log("No userId provided, skipping historical context retrieval.");
+    return {
+      current_step: "retrieveHistoricalContext",
+      historicalFoodLogs: [],
+      historicalExerciseLogs: [],
+      historicalInteractionLogs: [],
+    };
+  }
+  if (!query) {
+     console.log("No query text found, skipping historical context retrieval.");
+     return {
+      current_step: "retrieveHistoricalContext",
+      historicalFoodLogs: [],
+      historicalExerciseLogs: [],
+      historicalInteractionLogs: [],
+    };
+  }
+
+  // 1. Generate embedding for the current query
+  const queryEmbedding = await generateEmbedding(query);
+
+  if (!queryEmbedding) {
+    console.error("Failed to generate query embedding, skipping historical context retrieval.");
+     return {
+      current_step: "retrieveHistoricalContext",
+      historicalFoodLogs: [],
+      historicalExerciseLogs: [],
+      historicalInteractionLogs: [],
+    };
+  }
+
+  // 2. Perform vector searches concurrently
+  try {
+    console.log(`Searching historical logs for user ${userId} with query embedding.`);
+    const [foodResults, exerciseResults, interactionResults] = await Promise.all([
+      searchFoodLogs(userId, queryEmbedding, HISTORICAL_COUNT),
+      searchExerciseLogs(userId, queryEmbedding, HISTORICAL_COUNT),
+      searchInteractionLogs(userId, queryEmbedding, HISTORICAL_COUNT)
+    ]);
+
+    console.log(`Retrieved historical logs - Food: ${foodResults.length}, Exercise: ${exerciseResults.length}, Interactions: ${interactionResults.length}`);
+
+    return {
+      current_step: "retrieveHistoricalContext",
+      historicalFoodLogs: foodResults,
+      historicalExerciseLogs: exerciseResults,
+      historicalInteractionLogs: interactionResults, // Contains metadata objects
+    };
+  } catch (error) {
+     console.error("Error during historical context retrieval:", error);
+     return {
+      current_step: "retrieveHistoricalContext",
+      historicalFoodLogs: [],
+      historicalExerciseLogs: [],
+      historicalInteractionLogs: [],
+    };
+  }
+}
+
 // Node: Knowledge Layer
 // Returns updates for specific channels
-async function runKnowledgeLayer(state: AgentState): Promise<{
-    current_step: string;
-    knowledgeResponse: FactualInformation;
-}> {
+async function runKnowledgeLayer(state: AgentState): Promise<Partial<AgentState>> {
   console.log("--- Step: Knowledge Layer ---");
   const lastMessage = state.messages[state.messages.length - 1];
   const query = typeof lastMessage.content === 'string' ? lastMessage.content : JSON.stringify(lastMessage.content); // Handle potential non-string content
@@ -228,10 +292,7 @@ async function runKnowledgeLayer(state: AgentState): Promise<{
 
 // Node: Reasoning Layer
 // Returns updates for specific channels
-async function runReasoningLayer(state: AgentState): Promise<{
-    current_step: string;
-    reasoningResponse: ReasoningOutput | null;
-}> {
+async function runReasoningLayer(state: AgentState): Promise<Partial<AgentState>> {
   console.log("--- Step: Reasoning Layer ---");
   const lastMessage = state.messages[state.messages.length - 1];
   const query = typeof lastMessage.content === 'string' ? lastMessage.content : JSON.stringify(lastMessage.content);
@@ -244,10 +305,13 @@ async function runReasoningLayer(state: AgentState): Promise<{
   // TODO: Determine actual time context (e.g., based on server time or user input) - This is different from targetDate
   const timeContext = "Midday"; // Placeholder for time-of-day context
   const targetDate = state.targetDate ?? new Date().toISOString().split('T')[0]; // Use identified date or default
-  // TODO: Pass daily logs to generatePersonalizedInsights
+  // Get daily and historical logs from state
   const dailyFoodLogs = state.dailyFoodLogs ?? [];
   const dailyExerciseLogs = state.dailyExerciseLogs ?? [];
   const dailyInteractionLogs = state.dailyInteractionLogs ?? [];
+  const historicalFoodLogs = state.historicalFoodLogs ?? [];
+  const historicalExerciseLogs = state.historicalExerciseLogs ?? [];
+  const historicalInteractionLogs = state.historicalInteractionLogs ?? [];
 
   if (!knowledgeInfo) {
       console.warn("Reasoning Layer: Knowledge information is missing.");
@@ -262,7 +326,11 @@ async function runReasoningLayer(state: AgentState): Promise<{
       timeContext,
       dailyFoodLogs, // Pass daily logs from state
       dailyExerciseLogs,
-      dailyInteractionLogs
+      dailyInteractionLogs,
+      // NEW: Pass historical logs
+      historicalFoodLogs,
+      historicalExerciseLogs,
+      historicalInteractionLogs
   );
 
 
@@ -272,11 +340,7 @@ async function runReasoningLayer(state: AgentState): Promise<{
 
 // Node: Conversation Layer
 // Returns updates for specific channels
-async function runConversationLayer(state: AgentState): Promise<{
-    current_step: string;
-    structuredAnswer?: StructuredAnswer; // Make optional as it might fail
-    messages: BaseMessage[];
-}> {
+async function runConversationLayer(state: AgentState): Promise<Partial<AgentState>> {
   console.log("--- Step: Conversation Layer ---");
   const lastMessage = state.messages[state.messages.length - 1];
   const query = typeof lastMessage.content === 'string' ? lastMessage.content : JSON.stringify(lastMessage.content);
@@ -284,13 +348,50 @@ async function runConversationLayer(state: AgentState): Promise<{
   const reasoningOutput = state.reasoningResponse ?? null; // This is now ReasoningOutput | null
   const userId = state.userId || "unknown-user"; // Provide default if needed
   const conversationId = state.conversationId || `temp-${Date.now()}`; // Provide default if needed
+  const tdee = state.userProfile?.tdee; // Get TDEE from profile if available
+  const targetDate = state.targetDate ?? new Date().toISOString().split('T')[0]; // Get target date
 
-  // Call the actual conversation layer function
+  // --- Calculate current daily calories ---
+  let currentDailyCalories = 0;
+  try {
+      // Fetch the LATEST logs for the day, including any just saved
+      const currentFoodLogs = await getDailyFoodLogs(userId, targetDate);
+      if (currentFoodLogs.length > 0) {
+          currentDailyCalories = currentFoodLogs.reduce((sum, log) => sum + (log.calories || 0), 0);
+      }
+      console.log(`[Conversation Layer] Recalculated daily calories: ${currentDailyCalories}`);
+  } catch (fetchError) {
+       console.error("[Conversation Layer] Error fetching latest food logs for calorie calculation:", fetchError);
+       // Proceed with 0 or potentially stale data if needed, or handle error
+  }
+  // --- End calorie calculation ---
+
+
+  // --- Prepare data for Conversation Layer ---
+  // Start with reasoning output, but override calorie data with fresh calculation
+  // Ensure insights has a default value if reasoningOutput is null
+  const finalReasoningData: ReasoningOutput = {
+      insights: reasoningOutput?.insights ?? '', // Provide default empty string for insights
+      suggestions: reasoningOutput?.suggestions,
+      warnings: reasoningOutput?.warnings,
+      agenticLogIntents: reasoningOutput?.agenticLogIntents,
+      error: reasoningOutput?.error,
+      derivedData: {
+          ...(reasoningOutput?.derivedData ?? {}), // Keep other derived data
+          dailyCaloriesConsumed: currentDailyCalories, // Override with fresh calculation
+          userTDEE: tdee, // Ensure TDEE is included
+          remainingCalories: tdee !== undefined ? tdee - currentDailyCalories : undefined, // Recalculate remaining
+      }
+  };
+
+  // Call the actual conversation layer function, passing the *updated* reasoning data and calorie info
   const finalResponse = await generateFinalResponse(
       userId,
       conversationId,
       query,
-      reasoningOutput // Pass the output from the reasoning step (now guaranteed to be ReasoningOutput | null)
+      finalReasoningData, // Pass the potentially modified reasoning output
+      currentDailyCalories, // Pass newly calculated daily calories separately as well
+      tdee                  // Pass user's TDEE separately as well
   );
 
   console.log("Final Response:", finalResponse);
@@ -316,12 +417,149 @@ async function runConversationLayer(state: AgentState): Promise<{
     // Decide if this error should halt execution or just be logged
   }
   // --- End Logging ---
+  // Moved enrichAgenticLogIntents function definition below
 
   return {
       current_step: "runConversationLayer",
       structuredAnswer: finalResponse, // Store the full structured answer in the state
       messages: [...state.messages, finalAiMessage], // Add AI response text to messages
   };
+}
+
+// --- NEW NODE: Enrich Agentic Log Intents ---
+// Moved function definition to top level
+async function enrichAgenticLogIntents(state: AgentState): Promise<Partial<AgentState>> {
+    console.log("--- Step: Enrich Agentic Log Intents ---");
+    const intents = state.reasoningResponse?.agenticLogIntents;
+    const userId = state.userId;
+    const targetDate = state.targetDate ?? new Date().toISOString().split('T')[0]; // Ensure targetDate is available
+
+    if (!intents || intents.length === 0 || !userId) {
+        console.log("No log intents to enrich or userId missing.");
+        return { current_step: "enrichAgenticLogIntents", enrichedAgenticLogs: [] }; // Ensure field is initialized
+    }
+
+    console.log(`Attempting to enrich ${intents.length} log intents for user ${userId}.`);
+    const enrichmentPromises = intents.map(intent => enrichLogIntent(intent, userId, targetDate));
+    const results = await Promise.allSettled(enrichmentPromises);
+
+    const successfullyEnrichedLogs: (Omit<FoodLog, 'id' | 'createdAt' | 'updatedAt'> | Omit<ExerciseLog, 'id' | 'createdAt' | 'updatedAt'>)[] = [];
+    results.forEach((result, index) => {
+        if (result.status === 'fulfilled' && result.value) {
+            successfullyEnrichedLogs.push(result.value);
+        } else if (result.status === 'rejected') {
+            console.error(`Error enriching log intent #${index} ("${intents[index].details}"):`, result.reason);
+        } else {
+             console.warn(`Enrichment failed or returned null for intent #${index} ("${intents[index].details}").`);
+        }
+    });
+
+    console.log(`Successfully enriched ${successfullyEnrichedLogs.length} out of ${intents.length} intents.`);
+    return { current_step: "enrichAgenticLogIntents", enrichedAgenticLogs: successfullyEnrichedLogs };
+}
+
+// --- NEW NODE: Save Agentic Logs ---
+async function saveAgenticLogs(state: AgentState): Promise<Partial<AgentState>> {
+  console.log("--- Step: Save Agentic Logs ---");
+  // Read from the NEW state field containing fully enriched logs
+  const logsToSave = state.enrichedAgenticLogs;
+  const userId = state.userId; // userId should be present if logs exist
+
+  if (!logsToSave || logsToSave.length === 0) {
+    console.log("No enriched agentic logs to save.");
+    return { current_step: "saveAgenticLogs" }; // Nothing to do
+  }
+
+  console.log(`Attempting to save ${logsToSave.length} enriched agentic logs for user ${userId}.`);
+
+  // logsToSave contains objects matching Omit<FoodLog | ExerciseLog, ...>
+  // The saveFoodLog/saveExerciseLog functions expect the full type, but they
+  // only use the fields present in the Omit type for the INSERT operation.
+  // The database handles id, createdAt, updatedAt.
+  // We need to cast the log object back to the full type for the function call.
+  // Get existing daily logs from state for duplicate checking
+  const existingFoodLogs = state.dailyFoodLogs ?? [];
+  const existingExerciseLogs = state.dailyExerciseLogs ?? [];
+
+  const logPromises = logsToSave.map(log => {
+    // --- Duplicate Check ---
+    let isDuplicate = false;
+    if ('mealType' in log && log.name) { // Check if it's a potential FoodLog
+      const newLogNameLower = log.name.toLowerCase();
+      const newLogMealType = log.mealType;
+      isDuplicate = existingFoodLogs.some(existing => {
+        const existingNameLower = existing.name?.toLowerCase();
+        const existingMealType = existing.mealType;
+        // --- DEBUG LOGGING ---
+        console.log(`[Dup Check Food] Comparing NEW: name='${newLogNameLower}', meal='${newLogMealType}' VS EXISTING: id='${existing.id}', name='${existingNameLower}', meal='${existingMealType}'`);
+        // --- END DEBUG LOGGING ---
+        const nameMatch = existingNameLower === newLogNameLower;
+        const mealMatch = existingMealType === newLogMealType;
+        return nameMatch && mealMatch;
+      });
+      if (isDuplicate) {
+        console.log(`Duplicate check: Found matching existing FoodLog for "${log.name}" (${log.mealType}). Skipping save.`);
+      }
+    } else if ('type' in log && 'intensity' in log && log.name) { // Check if it's a potential ExerciseLog
+       const newLogNameLower = log.name.toLowerCase();
+       const newLogType = log.type;
+       isDuplicate = existingExerciseLogs.some(existing => {
+         const existingNameLower = existing.name?.toLowerCase();
+         const existingType = existing.type;
+         // --- DEBUG LOGGING ---
+         console.log(`[Dup Check Exercise] Comparing NEW: name='${newLogNameLower}', type='${newLogType}' VS EXISTING: id='${existing.id}', name='${existingNameLower}', type='${existingType}'`);
+         // --- END DEBUG LOGGING ---
+         const nameMatch = existingNameLower === newLogNameLower;
+         const typeMatch = existingType === newLogType;
+         return nameMatch && typeMatch;
+       });
+       if (isDuplicate) {
+        console.log(`Duplicate check: Found matching existing ExerciseLog for "${log.name}" (${log.type}). Skipping save.`);
+      }
+    }
+
+    if (isDuplicate) {
+      return Promise.resolve({ skipped: true, reason: 'Duplicate found in daily logs' }); // Resolve promise to indicate skip
+    }
+    // --- End Duplicate Check ---
+
+
+    // Determine log type and call appropriate save function if not duplicate
+    if ('mealType' in log) {
+      console.log(`Saving enriched FoodLog: ${log.name}`);
+      // Cast to FoodLog for the function call signature
+      return saveFoodLog(log as FoodLog).then(() => ({ skipped: false, reason: null })); // Add reason: null for consistency
+    } else if ('type' in log && 'intensity' in log) { // Check for exercise-specific fields
+      console.log(`Saving enriched ExerciseLog: ${log.name}`);
+       // Cast to ExerciseLog for the function call signature
+      return saveExerciseLog(log as ExerciseLog).then(() => ({ skipped: false, reason: null })); // Add reason: null for consistency
+    } else {
+      console.warn("Enriched log object doesn't match known types:", log);
+      return Promise.resolve({ skipped: true, reason: 'Unknown log type' }); // Indicate skip for unknown types
+    }
+  });
+
+  // Run saves concurrently
+  const results = await Promise.allSettled(logPromises);
+
+  results.forEach((result, index) => {
+    if (result.status === 'fulfilled') {
+      // Check our custom result object
+      if (result.value.skipped) {
+        // Only log the reason if it was skipped
+         console.log(`Agentic log #${index} skipped. Reason: ${result.value.reason}`);
+      } else {
+         console.log(`Agentic log #${index} saved successfully.`);
+         // TODO: Optionally update daily logs in state? Might be complex due to async nature.
+         // For now, rely on the next fetchDailyContext in a subsequent turn.
+      }
+    } else { // status === 'rejected'
+      console.error(`Error processing agentic log #${index}:`, result.reason);
+    }
+  });
+
+  // We don't modify the state significantly here, just perform the side effect.
+  return { current_step: "saveAgenticLogs" };
 }
 
 // --- Define Edges (Conditional Logic) ---
@@ -334,7 +572,8 @@ function decideIfFetchUserData(state: AgentState): string {
         return "fetchUserData";
     } else {
         console.log("Decision: Skip user data fetch.");
-        return "runKnowledgeLayer";
+        // Go to retrieve history even if not personalizing
+        return "retrieveHistoricalContext";
     }
 }
 
@@ -403,6 +642,25 @@ const graphArgs: StateGraphArgs<AgentState> = {
     dailyInteractionLogs: {
       value: (x?: InteractionLog[], y?: InteractionLog[]) => y ?? x,
       default: () => [],
+    },
+    // Add channels for historical context logs
+    historicalFoodLogs: {
+      value: (x?: FoodLog[], y?: FoodLog[]) => y ?? x,
+      default: () => [],
+    },
+    historicalExerciseLogs: {
+      value: (x?: ExerciseLog[], y?: ExerciseLog[]) => y ?? x,
+      default: () => [],
+    },
+    historicalInteractionLogs: {
+      value: (x?: any[], y?: any[]) => y ?? x, // Using any[] as search returns metadata
+      default: () => [],
+    },
+    // Ensure calculatedDailyCalories channel is removed
+    // Add channel for enriched logs
+    enrichedAgenticLogs: {
+        value: (x?: (Omit<FoodLog, 'id' | 'createdAt' | 'updatedAt'> | Omit<ExerciseLog, 'id' | 'createdAt' | 'updatedAt'>)[], y?: (Omit<FoodLog, 'id' | 'createdAt' | 'updatedAt'> | Omit<ExerciseLog, 'id' | 'createdAt' | 'updatedAt'>)[]) => y ?? x,
+        default: () => [], // Correct default: empty array
     }
   },
 };
@@ -416,8 +674,12 @@ workflow.addNode("identifyTargetDate", identifyTargetDate as any);
 workflow.addNode("fetchDailyContext", fetchDailyContext as any); // NEW node
 workflow.addNode("analyzeQueryForPersonalization", analyzeQueryForPersonalization as any);
 workflow.addNode("fetchUserData", fetchUserData as any);
+workflow.addNode("retrieveHistoricalContext", retrieveHistoricalContext as any); // NEW node
 workflow.addNode("runKnowledgeLayer", runKnowledgeLayer as any);
 workflow.addNode("runReasoningLayer", runReasoningLayer as any);
+workflow.addNode("enrichAgenticLogIntents", enrichAgenticLogIntents as any); // Ensure this node is added
+workflow.addNode("saveAgenticLogs", saveAgenticLogs as any);
+// Ensure calculateDailyCaloriesNode is removed from node additions
 workflow.addNode("runConversationLayer", runConversationLayer as any);
 
 // Set entry point (without type assertions)
@@ -426,7 +688,8 @@ workflow.setEntryPoint("processInput" as any);
 // Add edges (without type assertions for now)
 workflow.addEdge("processInput" as any, "identifyTargetDate" as any); // Input -> Identify Date
 workflow.addEdge("identifyTargetDate" as any, "fetchDailyContext" as any); // Identify Date -> Fetch Daily Context
-workflow.addEdge("fetchDailyContext" as any, "analyzeQueryForPersonalization" as any); // Fetch Daily Context -> Analyze
+// Ensure edge goes from fetchDailyContext to analyzeQueryForPersonalization
+workflow.addEdge("fetchDailyContext" as any, "analyzeQueryForPersonalization" as any);
 
 // Conditional edge after analysis
 workflow.addConditionalEdges(
@@ -434,14 +697,17 @@ workflow.addConditionalEdges(
   decideIfFetchUserData, // Use the decision function
   {
     fetchUserData: "fetchUserData" as any, // If yes, fetch data
-    runKnowledgeLayer: "runKnowledgeLayer" as any, // If no, skip to knowledge
+    retrieveHistoricalContext: "retrieveHistoricalContext" as any, // If no, skip fetchUserData but still retrieve history
   }
 );
 
-workflow.addEdge("fetchUserData" as any, "runKnowledgeLayer" as any); // After fetch -> Knowledge
+workflow.addEdge("fetchUserData" as any, "retrieveHistoricalContext" as any); // After fetch -> Retrieve History
+workflow.addEdge("retrieveHistoricalContext" as any, "runKnowledgeLayer" as any); // After Retrieve History -> Knowledge
 // Note: runKnowledgeLayer edge remains the same (doesn't directly depend on date yet)
 workflow.addEdge("runKnowledgeLayer" as any, "runReasoningLayer" as any); // Knowledge -> Reasoning
-workflow.addEdge("runReasoningLayer" as any, "runConversationLayer" as any); // Reasoning -> Conversation
+workflow.addEdge("runReasoningLayer" as any, "enrichAgenticLogIntents" as any); // Reasoning -> Enrich Intents
+workflow.addEdge("enrichAgenticLogIntents" as any, "saveAgenticLogs" as any); // Enrich Intents -> Save Logs
+workflow.addEdge("saveAgenticLogs" as any, "runConversationLayer" as any); // Save Logs -> Conversation
 workflow.addEdge("runConversationLayer" as any, END); // Conversation -> End
 
 // Compile the graph

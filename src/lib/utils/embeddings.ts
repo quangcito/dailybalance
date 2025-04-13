@@ -17,6 +17,9 @@ export async function generateEmbedding(text: string): Promise<number[] | null> 
     console.warn("generateEmbedding received empty text.");
     return null;
   }
+  const apiKey = process.env.OPENAI_API_KEY || 'Not Found';
+  const maskedKey = apiKey.length > 9 ? `${apiKey.substring(0, 5)}...${apiKey.substring(apiKey.length - 4)}` : apiKey;
+  console.log(`[generateEmbedding] Using OpenAI Key: ${maskedKey}`);
   try {
     // The dimensions parameter in the constructor should handle the output size.
     const embedding = await embeddingsModel.embedQuery(text);

@@ -18,6 +18,13 @@ const openai = new OpenAI({
 });
 
 // Define the structure for the output of the Reasoning Layer
+// NEW: Define structure for log intent identification
+export interface AgenticLogIntent {
+  type: 'food' | 'exercise';
+  /** Raw details extracted from the query (e.g., "oatmeal for breakfast", "30 min run") */
+  details: string;
+}
+
 export interface ReasoningOutput {
   /** Synthesized insights based on user context and factual info. */
   insights: string;
@@ -27,51 +34,78 @@ export interface ReasoningOutput {
   warnings?: string[];
   /** Structured data derived during reasoning, intended for the final dataSummary. */
   derivedData?: Record<string, any>;
-  /** Optional array of food/exercise logs identified for agentic creation. */
-  agenticLogsToCreate?: (FoodLog | ExerciseLog)[];
+  /** Optional array of log intents identified for agentic creation. */
+  agenticLogIntents?: AgenticLogIntent[]; // CHANGED from agenticLogsToCreate
   error?: string; // If an error occurred during reasoning
 }
 
-const REASONING_LAYER_SYSTEM_PROMPT = `You are the Reasoning Layer of the DailyBalance Answer Engine. Your role is to synthesize factual information with user-specific context (profile, goals, time of day, and logs for the target date) to generate personalized insights, preliminary recommendations, and identify potential food/exercise logs implied by the user's query.
+const REASONING_LAYER_SYSTEM_PROMPT = `You are the Reasoning Layer of the DailyBalance Answer Engine. Your primary role is to synthesize information and generate insights/recommendations. A secondary, but important, task is to identify if the user's query implicitly mentions a food or exercise event that should be logged.
 
-Inputs Provided:
-1.  User Query: The original question asked by the user.
-2.  Factual Information: Data retrieved by the Knowledge Layer (e.g., nutritional info, exercise details).
-3.  User Profile: Details like age, gender, height, weight, activity level, calculated BMR/TDEE.
-4.  User Goals: (Now part of User Profile) Active health/fitness goals.
-5.  Time Context: The current time context (e.g., "Morning", "Midday", "Evening").
-6.  Daily Food Logs: Food consumed by the user on the target date.
-7.  Daily Exercise Logs: Exercises performed by the user on the target date.
-8.  Daily Interaction Logs: Previous questions/answers from the user on the target date.
+**Process:**
 
-Your Tasks:
-1.  **Analyze & Synthesize:** Analyze the Factual Information in light of the User Profile, Goals, Time Context, AND the Daily Logs for the target date. Consider progress towards goals (calories, exercise). Identify relevant connections, implications, or discrepancies.
-2.  **Generate Insights:** Create concise, personalized insights. What does this information *mean* for *this specific user* considering their activity *today*?
-3.  **Formulate Suggestions/Warnings:** Generate preliminary, actionable suggestions and potential warnings based on the daily context and synthesis.
-4.  **Identify Agentic Logs:** Determine if the User Query clearly implies a food or exercise event that hasn't been logged yet (e.g., "I just ate an apple and some nuts", "I went for a 30 min run"). If so, structure the details of these implied events.
-5.  **Calculate Derived Data:** Compute relevant summary data points based on all available information (including any identified agentic logs). This data should be suitable for populating the final 'dataSummary' field later (e.g., updated daily calorie total, exercise minutes).
-6.  **Output JSON:** Respond ONLY with a JSON object matching the ReasoningOutput interface: { insights: string, suggestions?: string[], warnings?: string[], derivedData?: Record<string, any>, agenticLogsToCreate?: (FoodLog | ExerciseLog)[] }.
-    - Populate \`insights\`, \`suggestions\`, \`warnings\` based on your analysis.
-    - Populate \`agenticLogsToCreate\` with an array of fully structured FoodLog or ExerciseLog objects if any were identified in Task 4. Ensure required fields (like name, calories/duration, type) are estimated reasonably based on the query and factual info. Omit this field if no logs should be created.
-    - Populate \`derivedData\` with key summary data points from Task 5.
+1.  **Identify Agentic Log Intent (Perform FIRST):**
+    *   **Scan the User Query:** Look *specifically* for phrases like "I ate...", "I had...", "I just finished...", "I went for...", "I did X exercise...", etc., that indicate a completed food or exercise event.
+    *   **Check for Duplicates:** Before creating an intent, review the 'Daily Food Logs' and 'Daily Exercise Logs' provided as input. If a log for the same item (e.g., similar name and meal type or exercise type) already exists for the target date, do not create a new log intent. You may note the existing log in the insights (Step 3).
+    *   **Extract Details:** If no duplicate is found and an intent is identified, determine the type ('food' or 'exercise') and extract the *exact phrase* describing the event (e.g., "oatmeal for breakfast", "a 30 min run", "an apple for a snack").
+    *   **Store Intent:** Prepare an AgenticLogIntent object (an object with a 'type' field set to 'food' or 'exercise', and a 'details' field containing the extracted phrase string). If multiple non-duplicate events are mentioned, create multiple intent objects. If none are found or only duplicates are found, this step yields nothing.
+    *   **Crucially:** Do NOT try to estimate calories, macros, duration, etc., at this stage. Only extract the raw details mentioned for non-duplicate events.
 
-Example Scenario:
-- Query: "I ate an apple for a snack, was that okay?"
-- Factual Info: "A medium apple has about 95 calories..."
-- Profile: Moderately active male, 30yo.
-- Goals: Weight loss (target 2000 kcal/day).
-- Time: Midday.
-- Daily Logs: Show 1200 kcal consumed so far.
-- Output: {
-    "insights": "An apple is a good low-calorie snack choice. Adding the apple (approx 95 kcal), your estimated intake today is 1295 kcal, leaving you with about 705 kcal for your 2000 kcal goal.",
-    "suggestions": ["Pairing it with protein like nuts could improve satiety."],
-    "derivedData": { "itemCalories": 95, "estimatedDailyCalories": 1295, "remainingCalories": 705 },
-    "agenticLogsToCreate": [
-      { "name": "Apple", "calories": 95, "mealType": "Snack", "source": "ai-logging" /* other required fields filled */ }
-    ]
+2.  **Analyze & Synthesize:** Now, analyze the Factual Information, User Profile, Goals, Time Context, Daily Logs, and Historical Logs. Consider the user's overall context and progress.
+
+3.  **Generate Insights:** Create concise, personalized insights based on the synthesis in Step 2. What does the information mean for *this user* today? **If you detected a duplicate log in Step 1, include a brief note about it here (e.g., "Note: Oatmeal already logged for today").**
+
+4.  **Formulate Suggestions/Warnings:** Generate preliminary, actionable suggestions and potential warnings based on the synthesis.
+
+5.  **Calculate Derived Data:** Compute relevant summary data points based *only* on the provided logs and profile (e.g., daily calorie total *before* any potential agentic logs).
+
+6.  **Output JSON:** Respond ONLY with a JSON object matching the ReasoningOutput interface (containing fields like 'insights' (string type), optional 'suggestions' (list of strings), optional 'warnings' (list of strings), optional 'derivedData' (object with any properties), optional 'agenticLogIntents' (list of AgenticLogIntent objects)).
+    *   Populate the 'insights', 'suggestions', and 'warnings' fields based on Steps 2, 3, and 4.
+    *   Populate the 'agenticLogIntents' field with the list of intent objects identified in Step 1. If no intents were found, omit this field or use an empty list.
+    *   Populate the 'derivedData' field based on Step 5.
+
+**Inputs Provided:**
+*   User Query
+*   Factual Information
+*   User Profile (incl. Goals, BMR/TDEE)
+*   Time Context
+*   Daily Food Logs
+*   Daily Exercise Logs
+*   Daily Interaction Logs
+*   Historical Food Logs
+*   Historical Exercise Logs
+*   Historical Interaction Logs
+
+**Example Scenario 1:**
+*   Query: "I ate an apple for a snack, was that okay?"
+*   (Other inputs...)
+*   Output: {
+    "insights": "An apple is a good low-calorie snack choice...",
+    "suggestions": ["Pairing it with protein..."],
+    "derivedData": { ... },
+    "agenticLogIntents": [ { "type": "food", "details": "an apple for a snack" } ]
   }
 
-Focus on relevance, personalization, daily context, actionable advice, and accurate JSON output. Be concise.`;
+**Example Scenario 2:**
+*   Query: "I had oatmeal for breakfast, what's a good lunch?"
+*   (Other inputs...)
+*   Output: {
+    "insights": "Having oatmeal for breakfast provides good fiber... (Note: Oatmeal already logged for today)", // Example insight if duplicate found
+    "suggestions": ["For lunch, consider a grilled chicken salad..."],
+    "derivedData": { ... }
+    // No agenticLogIntents because it was a duplicate
+  }
+
+**Example Scenario 3:**
+*   Query: "What are the benefits of running?"
+*   (Other inputs...)
+*   Output: {
+    "insights": "Running offers numerous cardiovascular benefits...",
+    "suggestions": [...],
+    "derivedData": { ... }
+    // No agenticLogIntents field as no event was mentioned
+  }
+
+Focus on accurately identifying the log intent (Step 1) and then generating the rest of the response based on the overall context. Ensure accurate JSON output.`;
 
 /**
  * Generates personalized insights by synthesizing factual information with user context.
@@ -84,6 +118,9 @@ Focus on relevance, personalization, daily context, actionable advice, and accur
  * @param dailyFoodLogs - Array of food logs for the target date.
  * @param dailyExerciseLogs - Array of exercise logs for the target date.
  * @param dailyInteractionLogs - Array of interaction logs for the target date.
+ * @param historicalFoodLogs - Array of relevant historical food logs.
+ * @param historicalExerciseLogs - Array of relevant historical exercise logs.
+ * @param historicalInteractionLogs - Array of relevant historical interaction metadata.
  * @returns A ReasoningOutput object or null if an error occurs.
  */
 export async function generatePersonalizedInsights(
@@ -93,7 +130,11 @@ export async function generatePersonalizedInsights(
   timeContext: string, // e.g., "Morning", "Midday", "Evening"
   dailyFoodLogs: FoodLog[],
   dailyExerciseLogs: ExerciseLog[],
-  dailyInteractionLogs: InteractionLog[]
+  dailyInteractionLogs: InteractionLog[],
+  // NEW: Add historical log parameters
+  historicalFoodLogs: FoodLog[],
+  historicalExerciseLogs: ExerciseLog[],
+  historicalInteractionLogs: any[]
 ): Promise<ReasoningOutput | null> {
   console.log(`Reasoning Layer: Generating insights for query: "${query}"`);
 
@@ -107,6 +148,9 @@ Time Context: ${timeContext}
 Daily Food Logs: ${JSON.stringify(dailyFoodLogs)}
 Daily Exercise Logs: ${JSON.stringify(dailyExerciseLogs)}
 Daily Interaction Logs: ${JSON.stringify(dailyInteractionLogs)}
+Historical Food Logs: ${JSON.stringify(historicalFoodLogs)}
+Historical Exercise Logs: ${JSON.stringify(historicalExerciseLogs)}
+Historical Interaction Logs: ${JSON.stringify(historicalInteractionLogs)}
 
 Generate the JSON output based on these inputs.
 `;
@@ -133,47 +177,8 @@ Generate the JSON output based on these inputs.
     try {
       const parsedOutput: ReasoningOutput = JSON.parse(responseContent);
       console.log('Reasoning Layer: Successfully generated insights.');
-      // --- Start Agentic Logging ---
-      if (parsedOutput.agenticLogsToCreate && Array.isArray(parsedOutput.agenticLogsToCreate) && userProfile?.id) {
-        const currentUserId = userProfile.id; // Get userId for logging
-        const logPromises = parsedOutput.agenticLogsToCreate.map(log => {
-          // Add common fields
-          const baseLog = {
-            ...log,
-            userId: currentUserId,
-            loggedAt: new Date().toISOString(),
-            date: new Date().toISOString().split('T')[0],
-            source: 'ai-logging' as const // Explicitly set source
-          };
-
-          // Check if it's a FoodLog (e.g., by checking for mealType)
-          if ('mealType' in baseLog) {
-            // Ensure required fields for FoodLog are present (or handled in saveFoodLog)
-            return saveFoodLog(baseLog as FoodLog);
-          }
-          // Check if it's an ExerciseLog (e.g., by checking for type)
-          else if ('type' in baseLog && ('duration' in baseLog || 'caloriesBurned' in baseLog)) {
-             // Ensure required fields for ExerciseLog are present
-            return saveExerciseLog(baseLog as ExerciseLog);
-          } else {
-            console.warn("Agentic log object doesn't match known types:", log);
-            return Promise.resolve(); // Return resolved promise for unknown types
-          }
-        });
-
-        // Run saves concurrently but don't block the response
-        Promise.allSettled(logPromises).then(results => {
-          results.forEach((result, index) => {
-            if (result.status === 'rejected') {
-              console.error(`Error saving agentic log #${index}:`, result.reason);
-            } else {
-               console.log(`Agentic log #${index} processed.`);
-            }
-          });
-        });
-      }
-      // --- End Agentic Logging ---
-
+      // Agentic logging will be handled by a separate node in the orchestrator.
+      // The 'agenticLogsToCreate' array is included in parsedOutput if generated by the LLM.
       return parsedOutput;
     } catch (parseError) {
       console.error('Reasoning Layer: Failed to parse JSON response from OpenAI:', parseError);
