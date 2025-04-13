@@ -1,11 +1,38 @@
 'use client'; // Required for hooks like useState, useEffect
 
-import React, { useState, useEffect, FormEvent } from 'react';
+import React, { useState, useEffect, FormEvent, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid'; // For generating unique IDs
 import QueryInput from '@/components/answer-engine/query-input';
 import AnswerCard from '@/components/answer-engine/answer-card';
 import { ConversationMessage, UserMessage, SystemMessage, StructuredAnswer, Source } from '@/types/conversation';
 import { UserProfile } from '@/types/user'; // Import UserProfile type
+// Helper function to format date headers
+const formatDateHeader = (dateString: string): string => {
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+
+  const messageDate = new Date(dateString + 'T00:00:00'); // Ensure comparison is based on date part
+
+  // Reset time parts for accurate date comparison
+  today.setHours(0, 0, 0, 0);
+  yesterday.setHours(0, 0, 0, 0);
+  messageDate.setHours(0, 0, 0, 0);
+
+  if (messageDate.getTime() === today.getTime()) {
+    return 'Today';
+  }
+  if (messageDate.getTime() === yesterday.getTime()) {
+    return 'Yesterday';
+  }
+  return messageDate.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+};
+
+
 export default function Home() {
   // Existing state
   const [conversationId, setConversationId] = useState<string | null>(null); // Session ID for chat history
@@ -28,6 +55,22 @@ export default function Home() {
       }
       setConversationId(currentSessionId);
 
+      // Load chat history from sessionStorage
+      const storedMessages = sessionStorage.getItem(`chatHistory_${currentSessionId}`);
+      if (storedMessages) {
+        try {
+          const parsedMessages = JSON.parse(storedMessages);
+          if (Array.isArray(parsedMessages)) {
+            setMessages(parsedMessages);
+          } else {
+             console.warn("Stored chat history is not an array:", parsedMessages);
+             sessionStorage.removeItem(`chatHistory_${currentSessionId}`); // Clear invalid data
+          }
+        } catch (e) {
+          console.error("Failed to parse chat history from sessionStorage", e);
+          sessionStorage.removeItem(`chatHistory_${currentSessionId}`); // Clear corrupted data
+        }
+      }
       // Guest ID & Profile (Persistent)
       const storedGuestId = localStorage.getItem('guestId');
       if (storedGuestId) {
@@ -117,8 +160,12 @@ export default function Home() {
       query: query,
       timestamp: new Date().toISOString(),
     };
-    setMessages((prevMessages) => [...prevMessages, userMessage]);
-
+    // Update state and sessionStorage
+    const updatedMessagesUser = [...messages, userMessage];
+    setMessages(updatedMessagesUser);
+    if (conversationId) {
+        sessionStorage.setItem(`chatHistory_${conversationId}`, JSON.stringify(updatedMessagesUser));
+    }
     // --- Placeholder for API Call ---
     console.log(`Submitting query: "${query}" with conversationId: ${conversationId}`);
     // Replace with actual fetch call to '/api/conversation'
@@ -158,8 +205,14 @@ export default function Home() {
         sources: data.sources,
         timestamp: new Date().toISOString(),
       };
-      setMessages((prevMessages) => [...prevMessages, systemMessage]);
-
+      // Update state and sessionStorage
+      setMessages((prevMessages) => {
+          const updatedMessagesSystem = [...prevMessages, systemMessage];
+          if (conversationId) {
+              sessionStorage.setItem(`chatHistory_${conversationId}`, JSON.stringify(updatedMessagesSystem));
+          }
+          return updatedMessagesSystem;
+      });
     } catch (err) {
       console.error("API call failed:", err);
       setError(err instanceof Error ? err.message : 'Failed to get answer.');
@@ -168,6 +221,24 @@ export default function Home() {
     }
     // --- End Placeholder ---
   };
+
+  // Group messages by date using useMemo
+  const groupedMessages = useMemo(() => {
+    const groups = new Map<string, ConversationMessage[]>();
+    messages.forEach((msg) => {
+      const dateKey = msg.timestamp.slice(0, 10); // YYYY-MM-DD
+      if (!groups.has(dateKey)) {
+        groups.set(dateKey, []);
+      }
+      groups.get(dateKey)?.push(msg);
+    });
+    // Sort groups by date (newest first) - convert Map to array, sort, convert back if needed, or sort keys
+     const sortedEntries = Array.from(groups.entries()).sort(([dateA], [dateB]) => {
+        // Sort dates chronologically (oldest first for display top-down)
+        return new Date(dateA).getTime() - new Date(dateB).getTime();
+    });
+    return new Map(sortedEntries);
+  }, [messages]);
 
   // Simple inline onboarding form component
   const GuestOnboardingForm = ({ onSubmit }: { onSubmit: (data: Partial<UserProfile>) => void }) => {
@@ -488,19 +559,30 @@ export default function Home() {
         <>
           {/* Message History */}
           <main className="flex-1 overflow-y-auto p-4 space-y-4">
-            {messages.map((msg, index) => (
-              <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-xl p-3 rounded-lg ${msg.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100'}`}>
-                  {msg.role === 'user' ? (
-                    <p>{msg.query}</p>
-                  ) : (
-                    <AnswerCard answer={msg.answer} sources={msg.sources} />
-                  )}
-                  <p className="text-xs text-right opacity-70 mt-1">
-                    {new Date(msg.timestamp).toLocaleTimeString()}
-                  </p>
+            {Array.from(groupedMessages.entries()).map(([dateString, messagesForDate]) => (
+              <React.Fragment key={dateString}>
+                {/* Date Separator */}
+                <div className="text-center my-4">
+                  <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-full">
+                    {formatDateHeader(dateString)}
+                  </span>
                 </div>
-              </div>
+                {/* Messages for this date */}
+                {messagesForDate.map((msg, index) => (
+                   <div key={`${dateString}-${index}`} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                     <div className={`max-w-xl p-3 rounded-lg shadow-md ${msg.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100'}`}>
+                       {msg.role === 'user' ? (
+                         <p>{msg.query}</p>
+                       ) : (
+                         <AnswerCard answer={msg.answer} sources={msg.sources} />
+                       )}
+                       <p className="text-xs text-right opacity-70 mt-1">
+                         {new Date(msg.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                       </p>
+                     </div>
+                   </div>
+                ))}
+              </React.Fragment>
             ))}
             {/* Loading Indicator */}
             {isLoading && (
