@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { UserProfile, UserGoal } from '@/types/user';
+import { UserProfile } from '@/types/user';
 import { FactualInformation } from './knowledge-layer.js';
 
 // Ensure environment variables are set
@@ -33,7 +33,7 @@ Inputs Provided:
 1.  User Query: The original question asked by the user.
 2.  Factual Information: Data retrieved by the Knowledge Layer (e.g., nutritional info, exercise details).
 3.  User Profile: Details like age, sex, height, weight, activity level.
-4.  User Goals: Active health/fitness goals (e.g., weight loss, calorie target, exercise frequency).
+4.  User Goals: (Now part of User Profile) Active health/fitness goals (e.g., weight loss, calorie target, exercise frequency).
 5.  Time Context: The current time context (e.g., "Morning", "Midday", "Evening").
 
 Your Task:
@@ -60,7 +60,7 @@ Focus on relevance, personalization, and actionable advice. Be concise.`;
  * @param query - The original user query.
  * @param factualInfo - Information from the Knowledge Layer.
  * @param userProfile - The user's profile data.
- * @param userGoals - The user's active goals.
+ * @param userGoals - (Removed) The user's active goals are now part of UserProfile.
  * @param timeContext - Current time context (e.g., "Morning", "Midday").
  * @returns A ReasoningOutput object or null if an error occurs.
  */
@@ -68,7 +68,7 @@ export async function generatePersonalizedInsights(
   query: string,
   factualInfo: FactualInformation,
   userProfile: UserProfile | null,
-  userGoals: UserGoal[],
+  // userGoals: UserGoal[], // Removed - Goals are in UserProfile
   timeContext: string // e.g., "Morning", "Midday", "Evening"
 ): Promise<ReasoningOutput | null> {
   console.log(`Reasoning Layer: Generating insights for query: "${query}"`);
@@ -78,7 +78,7 @@ export async function generatePersonalizedInsights(
 User Query: ${query}
 Factual Information: ${JSON.stringify(factualInfo)}
 User Profile: ${JSON.stringify(userProfile)}
-User Goals: ${JSON.stringify(userGoals)}
+User Goals: (Now part of User Profile) ${JSON.stringify(userProfile?.goal)}
 Time Context: ${timeContext}
 
 Generate the JSON output based on these inputs.

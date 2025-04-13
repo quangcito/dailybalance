@@ -7,8 +7,9 @@ import { StructuredAnswer, Source } from "@/types/conversation"; // Import exist
 import { getFactualInformation, FactualInformation } from './knowledge-layer.ts';
 import { generatePersonalizedInsights, ReasoningOutput } from './reasoning-layer.ts';
 import { generateFinalResponse } from './conversation-layer.ts';
-import { UserProfile, UserGoal } from '@/types/user'; // Import user types
-import { getUserProfile, getActiveUserGoals } from '../db/supabase'; // Import fetch functions
+import { UserProfile, InteractionLog } from '@/types/user'; // Import user types
+import { getUserProfile, logInteraction } from '../db/supabase'; // Import fetch and log functions
+import { calculateBMR, calculateTDEE } from '../utils/calculations'; // Import calculation functions
 
 // TODO: Import functions to fetch user profile/goals if needed - DONE
 // import { pineconeClient } from '../vector-db/pinecone';
@@ -25,7 +26,7 @@ export interface AgentState { // Add export keyword
   current_step?: string; // To track the current node
   // Add fields for fetched user data
   userProfile?: UserProfile | null;
-  userGoals?: UserGoal[];
+  // userGoals?: UserGoal[]; // Removed as goals are now part of UserProfile
   needsPersonalization?: boolean; // Flag from analysis step
 }
 
@@ -71,25 +72,34 @@ async function analyzeQueryForPersonalization(state: AgentState): Promise<{
 async function fetchUserData(state: AgentState): Promise<{
    current_step: string;
    userProfile: UserProfile | null;
-   userGoals: UserGoal[];
+   // userGoals: UserGoal[]; // Removed
 }> {
    console.log("--- Step: Fetch User Data ---");
    if (!state.userId) {
        console.log("No userId provided, skipping user data fetch.");
-       return { current_step: "fetchUserData", userProfile: null, userGoals: [] };
+       return { current_step: "fetchUserData", userProfile: null }; // Removed userGoals
    }
    console.log(`Fetching data for userId: ${state.userId}`);
    try {
-       const [profile, goals] = await Promise.all([
-           getUserProfile(state.userId),
-           getActiveUserGoals(state.userId)
-       ]);
+       let profile = await getUserProfile(state.userId);
+       // const goals = await getActiveUserGoals(state.userId); // Removed goal fetching
        console.log("Fetched Profile:", profile ? 'Yes' : 'No');
-       console.log("Fetched Goals:", goals.length);
-       return { current_step: "fetchUserData", userProfile: profile, userGoals: goals };
+       // console.log("Fetched Goals:", goals.length); // Removed goal logging
+
+       // Calculate BMR and TDEE if profile exists
+       if (profile) {
+           const bmr = calculateBMR(profile);
+           const tdee = calculateTDEE(bmr, profile.activityLevel);
+           // Assign undefined if calculation resulted in null to match UserProfile type
+           profile = { ...profile, bmr: bmr ?? undefined, tdee: tdee ?? undefined };
+           console.log("Calculated BMR:", bmr);
+           console.log("Calculated TDEE:", tdee);
+       }
+
+       return { current_step: "fetchUserData", userProfile: profile }; // Removed userGoals
    } catch (error) {
        console.error("Error fetching user data:", error);
-       return { current_step: "fetchUserData", userProfile: null, userGoals: [] }; // Return defaults on error
+       return { current_step: "fetchUserData", userProfile: null }; // Return defaults on error, removed userGoals
    }
 }
 
@@ -123,7 +133,7 @@ async function runReasoningLayer(state: AgentState): Promise<{
 
   // UserProfile and UserGoals are now potentially populated in the state
   const userProfile = state.userProfile ?? null;
-  const userGoals = state.userGoals ?? [];
+  // const userGoals = state.userGoals ?? []; // Goals are now in userProfile
   // TODO: Determine actual time context (e.g., based on server time or user input)
   const timeContext = "Midday"; // Placeholder - Keep for now
 
@@ -137,7 +147,7 @@ async function runReasoningLayer(state: AgentState): Promise<{
       query,
       knowledgeInfo,
       userProfile,
-      userGoals,
+      // userGoals, // Removed, goals are in profile
       timeContext
   );
 
@@ -172,6 +182,25 @@ async function runConversationLayer(state: AgentState): Promise<{
 
   // Append the final AI message to the list, store the structured answer itself
   const finalAiMessage = new AIMessage({ content: finalResponse.text }); // Use text for message history
+
+  // --- Log the interaction ---
+  try {
+    const interactionLogEntry: InteractionLog = {
+      userId: userId,
+      sessionId: conversationId, // Use conversationId as sessionId
+      timestamp: new Date().toISOString(),
+      query: query,
+      llmResponse: finalResponse, // Store the full structured answer
+      // userFeedback: undefined, // Not captured here
+      // metadata: undefined, // Add if needed
+    };
+    await logInteraction(interactionLogEntry);
+    console.log("Interaction logged successfully.");
+  } catch (logError) {
+    console.error("Failed to log interaction:", logError);
+    // Decide if this error should halt execution or just be logged
+  }
+  // --- End Logging ---
 
   return {
       current_step: "runConversationLayer",
@@ -234,10 +263,10 @@ const graphArgs: StateGraphArgs<AgentState> = {
       value: (x?: UserProfile | null, y?: UserProfile | null) => y ?? x,
       default: () => undefined,
     },
-    userGoals: {
-      value: (x?: UserGoal[], y?: UserGoal[]) => y ?? x,
-      default: () => [],
-    },
+    // userGoals: { // Removed channel
+    //   value: (x?: UserGoal[], y?: UserGoal[]) => y ?? x,
+    //   default: () => [],
+    // },
     needsPersonalization: {
        value: (x?: boolean, y?: boolean) => y ?? x,
        default: () => false,
