@@ -107,9 +107,26 @@ export async function getDailyFoodLogs(userId: string, targetDate: string): Prom
       return [];
     }
     console.log(`[getDailyFoodLogs] Found ${data?.length ?? 0} logs.`);
-    // Note: Casting to FoodLog[]. This assumes the DB schema will align with the FoodLog type defined in nutrition.ts.
-    // Adjust mapping if needed when DB schema is updated later.
-    return (data || []) as FoodLog[];
+
+    // Manually map snake_case columns to camelCase FoodLog properties
+    const mappedData: FoodLog[] = (data || []).map(item => ({
+        id: item.id,
+        userId: item.user_id,
+        name: item.name,
+        description: item.description,
+        portionSize: item.portion_size,
+        calories: item.calories,
+        macros: item.macros, // Assumes Supabase returns JSON correctly
+        micronutrients: item.micronutrients, // Assumes Supabase returns JSON correctly
+        mealType: item.meal_type, // Explicit mapping
+        loggedAt: item.logged_at,
+        date: item.date,
+        source: item.source,
+        createdAt: item.created_at,
+        updatedAt: item.updated_at,
+    }));
+
+    return mappedData;
   } catch (err) {
     console.error('Unexpected error in getDailyFoodLogs:', err);
     return [];
@@ -250,7 +267,8 @@ try {
 } catch (err) {
   console.error('[saveFoodLog] Unexpected error saving food log:', err);
 }
-} // <-- Add missing closing brace for saveFoodLog function
+}
+// Removed extra closing brace that was here
 
 /**
  * Saves an exercise log entry along with its embedding to the 'exercise_logs' table.
