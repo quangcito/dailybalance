@@ -1,5 +1,23 @@
 import { Source, StructuredAnswer } from './conversation'; // Import Source and StructuredAnswer
 
+// Define Enums based on string literal unions used below
+export enum ActivityLevel {
+  Sedentary = 'sedentary',
+  LightlyActive = 'lightly_active',
+  ModeratelyActive = 'moderately_active',
+  VeryActive = 'very_active',
+  ExtraActive = 'extra_active',
+}
+
+export enum Goal {
+  WeightLoss = 'weight-loss',
+  Maintenance = 'maintenance',
+  MuscleGain = 'muscle-gain',
+  Performance = 'performance',
+  GeneralHealth = 'general-health',
+}
+
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -12,8 +30,8 @@ export interface UserProfile {
   weight?: number; // in kg
 
   // Health goals
-  goal?: 'weight-loss' | 'maintenance' | 'muscle-gain' | 'performance' | 'general-health'; // Note: DB might use different strings here too
-  activityLevel?: 'sedentary' | 'lightly_active' | 'moderately_active' | 'very_active' | 'extra_active'; // Updated to match DB enum
+  goal?: Goal; // Use Goal enum
+  activityLevel?: ActivityLevel; // Use ActivityLevel enum
 
   // Dietary preferences
   dietaryPreferences?: {
