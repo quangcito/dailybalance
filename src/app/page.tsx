@@ -55,23 +55,7 @@ export default function Home() {
       }
       setConversationId(currentSessionId);
 
-      // Load chat history from sessionStorage
-      const storedMessages = sessionStorage.getItem(`chatHistory_${currentSessionId}`);
-      if (storedMessages) {
-        try {
-          const parsedMessages = JSON.parse(storedMessages);
-          if (Array.isArray(parsedMessages)) {
-            setMessages(parsedMessages);
-          } else {
-             console.warn("Stored chat history is not an array:", parsedMessages);
-             sessionStorage.removeItem(`chatHistory_${currentSessionId}`); // Clear invalid data
-          }
-        } catch (e) {
-          console.error("Failed to parse chat history from sessionStorage", e);
-          sessionStorage.removeItem(`chatHistory_${currentSessionId}`); // Clear corrupted data
-        }
-      }
-      // Guest ID & Profile (Persistent)
+      // Removed sessionStorage loading logic - will fetch from API instead
       const storedGuestId = localStorage.getItem('guestId');
       if (storedGuestId) {
         setGuestId(storedGuestId);
@@ -94,7 +78,49 @@ export default function Home() {
         setShowOnboarding(true); // New guest, show onboarding
       }
     }
-  }, []); // Runs once on mount
+  }, []); // Runs once on mount to initialize guestId and conversationId
+
+  // Effect to fetch initial chat history once guestId is available
+  useEffect(() => {
+    const fetchAndSetHistory = async () => {
+      if (guestId) {
+        console.log(`[History Fetch] Fetching initial history for guestId: ${guestId}`);
+        try {
+          // Fetch history for today by default (API defaults to today if no date is specified)
+          const response = await fetch(`/api/conversation/history?userId=${guestId}`);
+          if (!response.ok) {
+            let errorDetails = `HTTP error! status: ${response.status}`;
+             try {
+                const errorData = await response.json();
+                errorDetails = errorData.error || errorData.details || errorDetails;
+             } catch (jsonError) {
+                errorDetails = response.statusText || errorDetails;
+             }
+            throw new Error(`Failed to fetch history: ${errorDetails}`);
+          }
+          const historyMessages: ConversationMessage[] = await response.json();
+          if (Array.isArray(historyMessages)) {
+             console.log(`[History Fetch] Received ${historyMessages.length} messages.`);
+             setMessages(historyMessages); // Set initial messages from history
+          } else {
+             console.warn("[History Fetch] Received non-array data:", historyMessages);
+             setMessages([]); // Set empty if data is invalid
+          }
+        } catch (error) {
+          console.error("[History Fetch] Error fetching initial chat history:", error);
+          setError(error instanceof Error ? error.message : 'Could not load chat history.');
+          setMessages([]); // Set empty on error
+        }
+      }
+    };
+
+    // Only fetch history if onboarding is NOT shown (meaning guestId is set)
+    // and messages haven't already been populated (e.g., by previous session storage attempt, though that's removed)
+    if (!showOnboarding && guestId && messages.length === 0) {
+       fetchAndSetHistory();
+    }
+     // Dependency array: Run when guestId is set or showOnboarding changes to false
+  }, [guestId, showOnboarding]);
 
   // Handler for the guest onboarding form submission
   const handleGuestProfileSubmit = async (profileData: Partial<UserProfile>) => { // Make async
@@ -160,12 +186,8 @@ export default function Home() {
       query: query,
       timestamp: new Date().toISOString(),
     };
-    // Update state and sessionStorage
-    const updatedMessagesUser = [...messages, userMessage];
-    setMessages(updatedMessagesUser);
-    if (conversationId) {
-        sessionStorage.setItem(`chatHistory_${conversationId}`, JSON.stringify(updatedMessagesUser));
-    }
+    // Update state only
+    setMessages((prevMessages) => [...prevMessages, userMessage]);
     // --- Placeholder for API Call ---
     console.log(`Submitting query: "${query}" with conversationId: ${conversationId}`);
     // Replace with actual fetch call to '/api/conversation'
@@ -205,14 +227,8 @@ export default function Home() {
         sources: data.sources,
         timestamp: new Date().toISOString(),
       };
-      // Update state and sessionStorage
-      setMessages((prevMessages) => {
-          const updatedMessagesSystem = [...prevMessages, systemMessage];
-          if (conversationId) {
-              sessionStorage.setItem(`chatHistory_${conversationId}`, JSON.stringify(updatedMessagesSystem));
-          }
-          return updatedMessagesSystem;
-      });
+      // Update state only
+      setMessages((prevMessages) => [...prevMessages, systemMessage]);
     } catch (err) {
       console.error("API call failed:", err);
       setError(err instanceof Error ? err.message : 'Failed to get answer.');
