@@ -61,7 +61,7 @@ export async function queryPerplexity(query: string, systemPrompt?: string): Pro
 
   const payload: PerplexityRequestPayload = {
     // Using sonar-small-online as recommended for speed and web access in Knowledge Layer
-    model: 'sonar-small-online',
+    model: 'sonar',
     messages: messages,
   };
 

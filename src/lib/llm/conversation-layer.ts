@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { getConversationHistory, saveConversationTurn } from '../vector-db/pinecone.js';
+import { getConversationHistory, saveConversationTurn } from '../vector-db/pinecone.ts';
 import { ReasoningOutput } from './reasoning-layer.js';
 import { StructuredAnswer } from '@/types/conversation';
 

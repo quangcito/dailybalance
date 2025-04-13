@@ -1,4 +1,4 @@
-import { queryPerplexity } from './perplexity.js';
+import { queryPerplexity } from './perplexity.ts';
 
 // Define a specific type for the output of this layer, if needed.
 // For now, we'll assume it returns a string or structured data based on Perplexity's response.

@@ -4,10 +4,11 @@ import { HumanMessage, AIMessage, BaseMessage } from "@langchain/core/messages";
 import { RunnableLambda } from "@langchain/core/runnables";
 import { StructuredAnswer, Source } from "@/types/conversation"; // Import existing types
 
-// TODO: Import necessary clients and layers (Knowledge, Reasoning, Conversation)
-// import { knowledgeLayer } from './knowledge-layer';
-// import { reasoningLayer } from './reasoning-layer';
-// import { conversationLayer } from './conversation-layer';
+import { getFactualInformation, FactualInformation } from './knowledge-layer.ts';
+import { generatePersonalizedInsights, ReasoningOutput } from './reasoning-layer.ts';
+import { generateFinalResponse } from './conversation-layer.ts';
+import { UserProfile, UserGoal } from '@/types/user'; // Import user types
+// TODO: Import functions to fetch user profile/goals if needed
 // import { supabaseClient } from '../db/supabase';
 // import { pineconeClient } from '../vector-db/pinecone';
 // import { redisClient } from '../cache/redis';
@@ -17,14 +18,8 @@ export interface AgentState { // Add export keyword
   messages: BaseMessage[]; // Use BaseMessage to allow HumanMessage and AIMessage
   userId?: string; // Optional: Add if needed for context
   conversationId?: string; // Optional: Add if needed for context
-  knowledgeResponse?: { // Placeholder structure
-    content: string;
-    sources: Source[];
-  };
-  reasoningResponse?: { // Placeholder structure
-    personalizedAdvice: string;
-    dataSummary?: Record<string, any>;
-  };
+  knowledgeResponse?: FactualInformation; // Use type from knowledge-layer
+  reasoningResponse?: ReasoningOutput | null; // Use type from reasoning-layer
   structuredAnswer?: StructuredAnswer; // Final output
   current_step?: string; // To track the current node
 }
@@ -55,16 +50,15 @@ async function processInput(state: AgentState): Promise<{
 // Returns updates for specific channels
 async function runKnowledgeLayer(state: AgentState): Promise<{
     current_step: string;
-    knowledgeResponse: AgentState['knowledgeResponse'];
+    knowledgeResponse: FactualInformation;
 }> {
   console.log("--- Step: Knowledge Layer ---");
-  // TODO: Call knowledgeLayer.invoke() with appropriate input from state
-  const knowledgeResponse = { // Replace with actual call
-      content: "Placeholder: Knowledge Layer Response Content",
-      sources: [{ url: "http://example.com", title: "Example Source" }]
-  };
+  const lastMessage = state.messages[state.messages.length - 1];
+  const query = typeof lastMessage.content === 'string' ? lastMessage.content : JSON.stringify(lastMessage.content); // Handle potential non-string content
+
+  const knowledgeResponse = await getFactualInformation(query);
+
   console.log("Knowledge Response:", knowledgeResponse);
-  // TODO: Update state with knowledgeResponse
   return { current_step: "runKnowledgeLayer", knowledgeResponse };
 }
 
@@ -72,16 +66,36 @@ async function runKnowledgeLayer(state: AgentState): Promise<{
 // Returns updates for specific channels
 async function runReasoningLayer(state: AgentState): Promise<{
     current_step: string;
-    reasoningResponse: AgentState['reasoningResponse'];
+    reasoningResponse: ReasoningOutput | null;
 }> {
   console.log("--- Step: Reasoning Layer ---");
-  // TODO: Call reasoningLayer.invoke() with appropriate input from state (e.g., user input, knowledge)
-  const reasoningResponse = { // Replace with actual call
-      personalizedAdvice: "Placeholder: Reasoning Layer Personalized Advice",
-      dataSummary: { calories_needed: 500 }
-  };
+  const lastMessage = state.messages[state.messages.length - 1];
+  const query = typeof lastMessage.content === 'string' ? lastMessage.content : JSON.stringify(lastMessage.content);
+  const knowledgeInfo = state.knowledgeResponse;
+  const userId = state.userId;
+
+  // TODO: Fetch UserProfile and UserGoals based on userId
+  // This likely requires interacting with Supabase here or ensuring they are passed in the initial state.
+  const userProfile: UserProfile | null = null; // Placeholder
+  const userGoals: UserGoal[] = []; // Placeholder
+  // TODO: Determine actual time context (e.g., based on server time or user input)
+  const timeContext = "Midday"; // Placeholder
+
+  if (!knowledgeInfo) {
+      console.warn("Reasoning Layer: Knowledge information is missing.");
+      // Decide how to handle missing info - return error, default response, etc.
+      return { current_step: "runReasoningLayer", reasoningResponse: { insights: "Could not retrieve factual information.", error: "Missing knowledge data." } };
+  }
+
+  const reasoningResponse = await generatePersonalizedInsights(
+      query,
+      knowledgeInfo,
+      userProfile,
+      userGoals,
+      timeContext
+  );
+
   console.log("Reasoning Response:", reasoningResponse);
-  // TODO: Update state with reasoningResponse
   return { current_step: "runReasoningLayer", reasoningResponse };
 }
 
@@ -89,24 +103,34 @@ async function runReasoningLayer(state: AgentState): Promise<{
 // Returns updates for specific channels
 async function runConversationLayer(state: AgentState): Promise<{
     current_step: string;
-    structuredAnswer: StructuredAnswer;
+    structuredAnswer?: StructuredAnswer; // Make optional as it might fail
     messages: BaseMessage[];
 }> {
   console.log("--- Step: Conversation Layer ---");
-  // TODO: Call conversationLayer.invoke() with appropriate input (e.g., user input, knowledge, reasoning)
-  const finalResponse: StructuredAnswer = { // Replace with actual call
-      text: "Placeholder: Final Conversation Response Text",
-      suggestions: ["Log your breakfast"],
-      dataSummary: state.reasoningResponse?.dataSummary, // Pass through summary
-  };
+  const lastMessage = state.messages[state.messages.length - 1];
+  const query = typeof lastMessage.content === 'string' ? lastMessage.content : JSON.stringify(lastMessage.content);
+  // Ensure reasoningOutput is explicitly null if undefined, matching generateFinalResponse signature
+  const reasoningOutput = state.reasoningResponse ?? null; // This is now ReasoningOutput | null
+  const userId = state.userId || "unknown-user"; // Provide default if needed
+  const conversationId = state.conversationId || `temp-${Date.now()}`; // Provide default if needed
+
+  // Call the actual conversation layer function
+  const finalResponse = await generateFinalResponse(
+      userId,
+      conversationId,
+      query,
+      reasoningOutput // Pass the output from the reasoning step (now guaranteed to be ReasoningOutput | null)
+  );
+
   console.log("Final Response:", finalResponse);
-  // Append the final AI message to the list
-  const finalAiMessage = new AIMessage({ content: JSON.stringify(finalResponse) }); // Store structured answer as content
-  // Example: return { messages: [...state.messages, new AIMessage(finalResponse)] };
+
+  // Append the final AI message to the list, store the structured answer itself
+  const finalAiMessage = new AIMessage({ content: finalResponse.text }); // Use text for message history
+
   return {
       current_step: "runConversationLayer",
-      structuredAnswer: finalResponse,
-      messages: [...state.messages, finalAiMessage], // Add AI response to messages
+      structuredAnswer: finalResponse, // Store the full structured answer in the state
+      messages: [...state.messages, finalAiMessage], // Add AI response text to messages
   };
 }
 
@@ -139,16 +163,16 @@ const graphArgs: StateGraphArgs<AgentState> = {
       value: (x?: string, y?: string) => y ?? x,
       default: () => undefined,
     },
-    knowledgeResponse: {
-      value: (x, y) => y ?? x,
+    knowledgeResponse: { // Type is FactualInformation | undefined
+      value: (x?: FactualInformation, y?: FactualInformation) => y ?? x,
       default: () => undefined,
     },
-    reasoningResponse: {
-      value: (x, y) => y ?? x,
+    reasoningResponse: { // Type is ReasoningOutput | null | undefined
+      value: (x?: ReasoningOutput | null, y?: ReasoningOutput | null) => y ?? x,
       default: () => undefined,
     },
-    structuredAnswer: {
-      value: (x, y) => y ?? x,
+    structuredAnswer: { // Type is StructuredAnswer | undefined
+      value: (x?: StructuredAnswer, y?: StructuredAnswer) => y ?? x,
       default: () => undefined,
     },
     current_step: {
