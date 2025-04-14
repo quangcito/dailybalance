@@ -1,3 +1,42 @@
+# DailyBalance: Your AI-Powered Nutrition & Exercise Partner
+
+DailyBalance is an intelligent answer engine designed to help users maintain nutritional and exercise balance. It utilizes a Retrieval-Augmented Generation (RAG) approach, grounding its real-time, personalized recommendations in the user's daily food intake and exercise activities logged within the system, combined with their health profile and goals.
+
+## Key Features
+
+*   **RAG-Based Personalization:** Recommendations are grounded in your logged food and exercise data.
+*   **Smart Time Context:** Recommendations adapt based on the time of day (morning, midday, evening).
+*   **Intelligent Caloric Balance:** Dynamically calculates and visualizes your caloric intake versus expenditure.
+*   **Personalized Next Steps:** Suggests relevant next meals or exercises based on identified nutritional gaps or energy levels.
+*   **Contextual Memory:** Learns your frequent inputs and tracks patterns/preferences over time.
+*   **Manual Logging:** Allows users to manually log food intake and exercise activities.
+*   **Data Visualization:** Provides insights into trends and progress via a dedicated Stats page.
+
+## Technology Stack & Dependencies
+
+This project leverages a modern web stack and several third-party services:
+
+*   **Frontend:** [Next.js](https://nextjs.org/) (App Router) with TypeScript, [Tailwind CSS](https://tailwindcss.com/), and [Shadcn/ui](https://ui.shadcn.com/). State management with [Zustand](https://github.com/pmndrs/zustand) is planned/in progress. **Note:** Currently uses local storage to manage a guest user ID; full authentication is not yet implemented.
+*   **Backend:** Next.js API Routes.
+*   **LLM Orchestration:** [LangChain.js](https://js.langchain.com/) with [LangGraph](https://js.langchain.com/docs/langgraph) implementing a multi-layer approach:
+    *   **Knowledge Layer:** [Perplexity AI API](https://docs.perplexity.ai/) (Sonar model for factual retrieval).
+    *   **Reasoning Layer:** [OpenAI API](https://openai.com/api/) (GPT-4o-mini for personalization, informed by RAG).
+    *   **Conversation Layer:** OpenAI API (GPT-4o-mini for natural language interaction and context).
+*   **Databases & Storage:**
+    *   **[Supabase](https://supabase.com/):** PostgreSQL database (using `pgvector` for embeddings) for user data, food/exercise logs (used in RAG), and interaction history.
+    *   **[Pinecone](https://www.pinecone.io/):** Vector database for conversation memory.
+    *   **[Upstash Redis](https://upstash.com/):** (Planned) Caching layer.
+*   **Deployment:** Hosted on [Vercel](https://vercel.com/).
+
+## Usage
+
+1.  **Setup:** Follow the instructions in the "Running Locally" section below to set up environment variables (API keys for Supabase, OpenAI, Perplexity, Pinecone are required) and the local Supabase database.
+2.  **Interact:** Use the main chat interface to ask questions and receive personalized recommendations based on your logged data.
+3.  **Log Data:** Navigate to the "Food Logs" and "Exercise Logs" pages to manually input your daily activities. This data is crucial for the RAG system.
+4.  **View Progress:** Check the "Profile" page to manage your health details and goals, and the "Stats" page for insights into your progress.
+
+---
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Running Locally
