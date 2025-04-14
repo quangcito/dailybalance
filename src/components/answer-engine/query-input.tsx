@@ -1,6 +1,9 @@
 'use client';
 
 import React, { useState, FormEvent } from 'react';
+import { Input } from '@/components/ui/input'; // Shadcn Input
+import { Button } from '@/components/ui/button'; // Shadcn Button
+import { Send } from 'lucide-react'; // Icon
 
 interface QueryInputProps {
   onSubmit: (query: string) => void;
@@ -23,22 +26,24 @@ const QueryInput: React.FC<QueryInputProps> = ({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="flex items-center gap-2">
-      <input
+    <form onSubmit={handleSubmit} className="flex w-full items-center space-x-2">
+      <Input
         type="text"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder={placeholder}
         disabled={disabled}
-        className="flex-grow px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white disabled:opacity-50"
+        className="flex-1" // Let input take available space
+        aria-label="Chat input"
       />
-      <button
+      <Button
         type="submit"
         disabled={disabled || !query.trim()}
-        className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        size="icon" // Use icon size for button
+        aria-label="Send message"
       >
-        Send
-      </button>
+        <Send className="h-4 w-4" />
+      </Button>
     </form>
   );
 };
