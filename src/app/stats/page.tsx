@@ -34,11 +34,13 @@ const fetcher = async (url: string) => {
 export default function StatsPage() {
   const [period, setPeriod] = useState<'daily' | 'weekly'>('daily'); // State for selected period
   const [guestId, setGuestId] = useState<string | null>(null);
+  const [isGuestIdChecked, setIsGuestIdChecked] = useState<boolean>(false); // State to track if localStorage check is done
 
   // Get guestId from localStorage on component mount (client-side only)
    useEffect(() => {
     const storedGuestId = localStorage.getItem('guestId');
     setGuestId(storedGuestId);
+    setIsGuestIdChecked(true); // Mark check as complete
   }, []);
 
   // Use SWR to fetch stats based on the selected period
@@ -143,16 +145,17 @@ export default function StatsPage() {
         </Button>
       </div>
 
-      {/* Loading State */}
-      {isLoading && <p>Loading statistics...</p>}
+      {/* Combined Loading State (Initial ID check + SWR loading) */}
+      {(!isGuestIdChecked || isLoading) && <p>Loading statistics...</p>}
 
-      {/* Error State */}
-      {displayError && !isLoading && <p className="text-red-500">{displayError}</p>}
-      {!guestId && !isLoading && <p className="text-orange-500">Guest ID not found. Cannot load stats.</p>}
+      {/* Error State (only show if not loading) */}
+      {isGuestIdChecked && !isLoading && displayError && <p className="text-red-500 mb-4">{displayError}</p>}
 
-
+      {/* Guest ID Not Found State (only show if checked, not loading, and no guestId) */}
+      {isGuestIdChecked && !isLoading && !guestId && <p className="text-orange-500 mb-4">Guest ID not found. Cannot load stats.</p>}
       {/* Success State - Render stats based on period */}
-      {!isLoading && !displayError && statsData && (
+      {/* Profile Display State (only show if checked, guestId exists, statsData loaded, no error, not loading) */}
+      {isGuestIdChecked && guestId && statsData && !isLoading && !displayError && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Render the appropriate stats card */}
           {renderStats()}
@@ -165,9 +168,9 @@ export default function StatsPage() {
         </div>
       )}
 
-       {/* No Data State */}
-       {!isLoading && !displayError && !statsData && swrKey && (
-         <p>No statistics data available for the selected period.</p>
+      {/* No Data State (Show only if ID check done, ID exists, no error, not loading, but no data) */}
+      {isGuestIdChecked && guestId && !isLoading && !displayError && !statsData && (
+        <p>No statistics data available for the selected period.</p>
        )}
 
     </div>

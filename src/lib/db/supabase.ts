@@ -309,9 +309,26 @@ export async function getDailyExerciseLogs(userId: string, targetDate: string): 
       return [];
     }
     console.log(`[getDailyExerciseLogs] Found ${data?.length ?? 0} logs.`);
-    // Note: Casting to ExerciseLog[]. This assumes the DB schema will align with the ExerciseLog type defined in exercise.ts.
-    // Adjust mapping if needed when DB schema is updated later.
-    return (data || []) as ExerciseLog[];
+    // Manually map snake_case columns to camelCase ExerciseLog properties
+    const mappedData: ExerciseLog[] = (data || []).map(item => ({
+        id: item.id,
+        userId: item.user_id,
+        name: item.name,
+        type: item.type,
+        duration: item.duration,
+        intensity: item.intensity,
+        caloriesBurned: item.calories_burned, // Explicit mapping
+        strengthDetails: item.strength_details, // Map if exists
+        cardioDetails: item.cardio_details, // Map if exists
+        loggedAt: item.logged_at,
+        date: item.date,
+        source: item.source,
+        createdAt: item.created_at,
+        updatedAt: item.updated_at,
+        // embedding is likely not selected or needed here
+    }));
+
+    return mappedData;
   } catch (err) {
     console.error('Unexpected error in getDailyExerciseLogs:', err);
     return [];

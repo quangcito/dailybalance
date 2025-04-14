@@ -297,11 +297,13 @@ export default function FoodLogsPage() {
     return today;
   });
   const [guestId, setGuestId] = useState<string | null>(null);
+  const [isGuestIdChecked, setIsGuestIdChecked] = useState<boolean>(false); // State to track if localStorage check is done
 
   // Get guestId from localStorage on component mount (client-side only)
    useEffect(() => {
     const storedGuestId = localStorage.getItem('guestId');
     setGuestId(storedGuestId);
+    setIsGuestIdChecked(true); // Mark check as complete
   }, []);
 
   const formattedDate = useMemo(() => {
@@ -351,15 +353,20 @@ export default function FoodLogsPage() {
       </div>
 
 
-      {/* Loading and Error States */}
-      {isLoading && <p className="text-center py-4">Loading logs...</p>}
-      {displayError && !isLoading && <p className="text-red-500 text-center py-4">{displayError}</p>}
-      {!guestId && !isLoading && <p className="text-orange-500 text-center py-4">Guest ID not found. Cannot load or save logs.</p>}
+      {/* Combined Loading State (Initial ID check + SWR loading) */}
+      {(!isGuestIdChecked || isLoading) && <p className="text-center py-4">Loading logs...</p>}
 
+      {/* Error State (only show if not loading) */}
+      {isGuestIdChecked && !isLoading && displayError && <p className="text-red-500 text-center py-4">{displayError}</p>}
 
-      {/* Display Logs Table */}
-      {!isLoading && !displayError && logs && <FoodLogTable logs={logs} />}
-      {!isLoading && !displayError && !logs && swrKey && <p className="text-center py-4">No logs found for this date.</p> /* Show if fetch was attempted but returned null/undefined */}
+      {/* Guest ID Not Found State (only show if checked, not loading, and no guestId) */}
+      {isGuestIdChecked && !isLoading && !guestId && <p className="text-orange-500 text-center py-4">Guest ID not found. Cannot load or save logs.</p>}
+
+      {/* Display Logs Table (only show if checked, guestId exists, logs loaded, no error, not loading) */}
+      {isGuestIdChecked && guestId && logs && !isLoading && !displayError && <FoodLogTable logs={logs} />}
+
+      {/* No Data State (Show only if ID check done, ID exists, no error, not loading, but no data) */}
+      {isGuestIdChecked && guestId && !isLoading && !displayError && !logs && swrKey && <p className="text-center py-4">No logs found for this date.</p>}
 
 
     </div>
