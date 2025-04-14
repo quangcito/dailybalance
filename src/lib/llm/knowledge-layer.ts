@@ -29,7 +29,6 @@ export async function getFactualInformation(query: string): Promise<KnowledgeLay
       return { content: null, sources: [] }; // Return empty structure on failure
     }
 
-    // TODO: Potential post-processing of the Perplexity response.
     // - Could attempt to parse structured data if Perplexity returns JSON.
     // - Could validate or filter the information.
     // For now, return the raw string content.

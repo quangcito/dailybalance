@@ -24,7 +24,6 @@ const AnswerCard: React.FC<AnswerCardProps> = ({ answer, sources }) => {
           <ul className="list-disc list-inside space-y-1 text-muted-foreground">
             {answer.suggestions.map((suggestion: string, index: number) => ( // Added types
               <li key={index}>
-                {/* TODO: Make suggestions clickable - maybe wrap in a button? */}
                 {suggestion}
               </li>
             ))}

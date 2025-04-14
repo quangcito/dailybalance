@@ -76,7 +76,7 @@ export interface InteractionLog {
   timestamp: string; // ISO timestamp
   query: string;
   llmResponse?: StructuredAnswer; // Use the specific type
-  sources?: Source[]; // NEW: Store sources used for this response
+  sources?: Source[]; // Store sources used for this response
   userFeedback?: 'positive' | 'negative' | 'neutral' | string; // Could be free text
   metadata?: Record<string, any>; // Any extra context (e.g., time of day context used)
 }

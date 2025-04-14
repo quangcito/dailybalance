@@ -66,12 +66,12 @@ export async function generateFinalResponse(
   sessionId: string,
   query: string,
   reasoningOutput: ReasoningOutput | null,
-  // UPDATED: Use specific calorie parameters
+  // Use specific calorie parameters
   dailyCaloriesConsumed?: number,
   dailyCaloriesBurned?: number,
   netCalories?: number,
   tdee?: number, // Keep TDEE for context
-  sources?: Source[] // NEW: Add sources parameter
+  sources?: Source[] // sources parameter
 ): Promise<StructuredAnswer> {
   console.log(`Conversation Layer: Generating final response for query: "${query}"`);
 

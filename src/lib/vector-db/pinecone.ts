@@ -1,5 +1,4 @@
 import { Pinecone } from '@pinecone-database/pinecone';
-// TODO: Define types for conversation turns/memory entries if not already defined elsewhere
 
 // Ensure environment variables are set
 const pineconeApiKey = process.env.PINECONE_API_KEY;
@@ -35,7 +34,6 @@ const index = pinecone.index(pineconeIndexName);
  */
 export async function getConversationHistory(sessionId: string, k: number = 10): Promise<any[]> {
   console.log(`Placeholder: Fetching last ${k} turns for session ${sessionId} from Pinecone index ${pineconeIndexName}`);
-  // TODO: Implement actual Pinecone query logic
   // Example structure might involve querying by metadata filter on sessionId
   // and potentially sorting by timestamp or using vector similarity if applicable.
   /*

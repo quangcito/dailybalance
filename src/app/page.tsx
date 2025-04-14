@@ -56,9 +56,9 @@ const GuestOnboardingDialog = ({ open, onOpenChange, onSubmit }: { open: boolean
       gender: undefined,
       activityLevel: undefined,
       goal: undefined,
-      height: undefined, // New
-      weight: undefined, // New
-      dietaryPreferences: { // New object structure
+      height: undefined,
+      weight: undefined,
+      dietaryPreferences: {
         isVegetarian: false,
         isVegan: false,
         isGlutenFree: false,
@@ -70,12 +70,12 @@ const GuestOnboardingDialog = ({ open, onOpenChange, onSubmit }: { open: boolean
       allergiesStr: '',
       avoidedFoodsStr: '',
       preferredFoodsStr: '',
-      macroTargets: { // New object structure - Use 0 as default for required numbers
+      macroTargets: { // Use 0 as default for required numbers
           protein: 0,
           carbs: 0,
           fat: 0,
       },
-      preferences: { // New object structure
+      preferences: {
           units: 'metric', // Default value
           theme: 'light', // Default value set to light
           notifications: true, // Default value

@@ -16,17 +16,16 @@ import {
   getDailyFoodLogs,
   getDailyExerciseLogs,
   getDailyInteractionLogs,
-  searchFoodLogs, // NEW: Import vector search
-  searchExerciseLogs, // NEW: Import vector search
-  saveFoodLog, // NEW: Import save function
-  saveExerciseLog, // NEW: Import save function
-} from '../db/supabase'; // Import fetch and log functions
-import { searchInteractionLogs, getConversationHistory } from '../vector-db/pinecone'; // NEW: Import vector search & history fetch
-import { calculateBMR, calculateTDEE } from '../utils/calculations'; // Import calculation functions
-import { generateEmbedding } from '../utils/embeddings'; // NEW: Import embedding utility
-import { enrichLogIntent } from '../log-enrichment'; // NEW: Import enrichment function
+  searchFoodLogs,
+  searchExerciseLogs,
+  saveFoodLog,
+  saveExerciseLog,
+} from '../db/supabase';
+import { searchInteractionLogs, getConversationHistory } from '../vector-db/pinecone';
+import { calculateBMR, calculateTDEE } from '../utils/calculations';
+import { generateEmbedding } from '../utils/embeddings';
+import { enrichLogIntent } from '../log-enrichment';
 
-// TODO: Import functions to fetch user profile/goals if needed - DONE
 // import { pineconeClient } from '../vector-db/pinecone';
 // import { redisClient } from '../cache/redis';
 
@@ -35,11 +34,11 @@ export interface AgentState { // Add export keyword
   messages: BaseMessage[]; // Use BaseMessage to allow HumanMessage and AIMessage
   userId?: string; // Optional: Add if needed for context
   conversationId?: string; // Optional: Add if needed for context
-  targetDate?: string; // NEW: Target date for context (YYYY-MM-DD)
+  targetDate?: string; // Target date for context (YYYY-MM-DD)
   knowledgeResponse?: KnowledgeLayerOutput; // Updated type (contains content + sources)
   reasoningResponse?: ReasoningOutput | null; // Use type from reasoning-layer
   structuredAnswer?: StructuredAnswer; // Final output (will contain text with citations)
-  sources?: Source[]; // NEW: To hold sources from knowledge layer for final output
+  sources?: Source[]; // To hold sources from knowledge layer for final output
   current_step?: string; // To track the current node
   // Add fields for fetched user data
   userProfile?: UserProfile | null;
@@ -50,17 +49,17 @@ export interface AgentState { // Add export keyword
   dailyExerciseLogs?: ExerciseLog[];
   dailyInteractionLogs?: InteractionLog[];
   // Add fields for calculated daily totals
-  dailyCaloriesConsumed?: number; // NEW: Sum of calories from dailyFoodLogs
-  dailyCaloriesBurned?: number; // NEW: Sum of caloriesBurned from dailyExerciseLogs
-  netCalories?: number; // NEW: Calculated net calories (TDEE - consumed + burned)
+  dailyCaloriesConsumed?: number; // Sum of calories from dailyFoodLogs
+  dailyCaloriesBurned?: number; // Sum of caloriesBurned from dailyExerciseLogs
+  netCalories?: number; // Calculated net calories (TDEE - consumed + burned)
   // Add fields for retrieved historical context
   historicalFoodLogs?: FoodLog[];
   historicalExerciseLogs?: ExerciseLog[];
   historicalInteractionLogs?: any[]; // Pinecone search returns metadata objects
-  // NEW: State to hold fully enriched logs ready for saving
+  // State to hold fully enriched logs ready for saving
   enrichedAgenticLogs?: (Omit<FoodLog, 'id' | 'createdAt' | 'updatedAt'> | Omit<ExerciseLog, 'id' | 'createdAt' | 'updatedAt'>)[];
-  guestProfileData?: Partial<UserProfile>; // NEW: For guest mode onboarding
-  timeContext?: 'Morning' | 'Midday' | 'Afternoon' | 'Evening' | 'Night'; // NEW: Time context
+  guestProfileData?: Partial<UserProfile>; // For guest mode onboarding
+  timeContext?: 'Morning' | 'Midday' | 'Afternoon' | 'Evening' | 'Night'; // Time context
 }
 
 // --- Define Nodes ---
@@ -133,7 +132,7 @@ async function loadSessionHistory(state: AgentState): Promise<Partial<AgentState
     };
 }
 
-// --- NEW NODE: Determine Time Context ---
+// --- NODE: Determine Time Context ---
 async function determineTimeContext(state: AgentState): Promise<Partial<AgentState>> {
     console.log("--- Step: Determine Time Context ---");
     const now = new Date();
@@ -158,7 +157,7 @@ async function determineTimeContext(state: AgentState): Promise<Partial<AgentSta
 }
 
 
-// --- NEW NODE: Identify Target Date ---
+// --- NODE: Identify Target Date ---
 async function identifyTargetDate(state: AgentState): Promise<Partial<AgentState>> {
     console.log("--- Step: Identify Target Date ---");
     const lastMessage = state.messages[state.messages.length - 1];
@@ -194,7 +193,7 @@ async function identifyTargetDate(state: AgentState): Promise<Partial<AgentState
     return { current_step: "identifyTargetDate", targetDate };
 }
 
-// --- NEW NODE: Fetch Daily Context ---
+// --- NODE: Fetch Daily Context ---
 async function fetchDailyContext(state: AgentState): Promise<Partial<AgentState>> {
     console.log("--- Step: Fetch Daily Context ---");
     const userId = state.userId;
@@ -255,7 +254,7 @@ async function fetchDailyContext(state: AgentState): Promise<Partial<AgentState>
 // Ensure calculateDailyCaloriesNode function is removed
 
 
-// --- NEW NODE: Analyze Query for Personalization ---
+// --- NODE: Analyze Query for Personalization ---
 // Simple keyword-based check for now
 async function analyzeQueryForPersonalization(state: AgentState): Promise<Partial<AgentState>> {
    console.log("--- Step: Analyze Query for Personalization ---");
@@ -268,7 +267,7 @@ async function analyzeQueryForPersonalization(state: AgentState): Promise<Partia
    return { current_step: "analyzeQueryForPersonalization", needsPersonalization };
 }
 
-// --- NEW NODE: Fetch User Data (Conditional) ---
+// --- NODE: Fetch User Data (Conditional) ---
 async function fetchUserData(state: AgentState): Promise<Partial<AgentState>> {
    console.log("--- Step: Fetch User Data ---");
    if (!state.userId) {
@@ -352,7 +351,7 @@ async function fetchUserData(state: AgentState): Promise<Partial<AgentState>> {
    }
 }
 
-// --- NEW NODE: Retrieve Historical Context ---
+// --- NODE: Retrieve Historical Context ---
 async function retrieveHistoricalContext(state: AgentState): Promise<Partial<AgentState>> {
   console.log("--- Step: Retrieve Historical Context ---");
   const userId = state.userId;
@@ -543,7 +542,6 @@ async function runConversationLayer(state: AgentState): Promise<Partial<AgentSta
   // NOTE: The conversation layer internally fetches history again - this is redundant now.
   // We should modify generateFinalResponse to accept history from the state instead.
   // For now, we call it as is, but acknowledge the redundancy.
-  // TODO: Refactor generateFinalResponse to accept message history array.
   const finalResponse = await generateFinalResponse(
       userId,
       conversationId,
@@ -589,7 +587,7 @@ async function runConversationLayer(state: AgentState): Promise<Partial<AgentSta
   };
 }
 
-// --- NEW NODE: Enrich Agentic Log Intents ---
+// --- NODE: Enrich Agentic Log Intents ---
 // Moved function definition to top level
 async function enrichAgenticLogIntents(state: AgentState): Promise<Partial<AgentState>> {
     console.log("--- Step: Enrich Agentic Log Intents ---");
@@ -621,10 +619,10 @@ async function enrichAgenticLogIntents(state: AgentState): Promise<Partial<Agent
     return { current_step: "enrichAgenticLogIntents", enrichedAgenticLogs: successfullyEnrichedLogs };
 }
 
-// --- NEW NODE: Save Agentic Logs ---
+// --- NODE: Save Agentic Logs ---
 async function saveAgenticLogs(state: AgentState): Promise<Partial<AgentState>> {
   console.log("--- Step: Save Agentic Logs ---");
-  // Read from the NEW state field containing fully enriched logs
+  // Read from the state field containing fully enriched logs
   const logsToSave = state.enrichedAgenticLogs;
   const userId = state.userId; // userId should be present if logs exist
 
@@ -654,7 +652,7 @@ async function saveAgenticLogs(state: AgentState): Promise<Partial<AgentState>> 
         const existingNameLower = existing.name?.toLowerCase();
         const existingMealType = existing.mealType;
         // --- DEBUG LOGGING ---
-        console.log(`[Dup Check Food] Comparing NEW: name='${newLogNameLower}', meal='${newLogMealType}' VS EXISTING: id='${existing.id}', name='${existingNameLower}', meal='${existingMealType}'`);
+        console.log(`[Dup Check Food] Comparing: name='${newLogNameLower}', meal='${newLogMealType}' VS EXISTING: id='${existing.id}', name='${existingNameLower}', meal='${existingMealType}'`);
         // --- END DEBUG LOGGING ---
         const nameMatch = existingNameLower === newLogNameLower;
         const mealMatch = existingMealType === newLogMealType;
@@ -670,7 +668,7 @@ async function saveAgenticLogs(state: AgentState): Promise<Partial<AgentState>> 
          const existingNameLower = existing.name?.toLowerCase();
          const existingType = existing.type;
          // --- DEBUG LOGGING ---
-         console.log(`[Dup Check Exercise] Comparing NEW: name='${newLogNameLower}', type='${newLogType}' VS EXISTING: id='${existing.id}', name='${existingNameLower}', type='${existingType}'`);
+         console.log(`[Dup Check Exercise] Comparing: name='${newLogNameLower}', type='${newLogType}' VS EXISTING: id='${existing.id}', name='${existingNameLower}', type='${existingType}'`);
          // --- END DEBUG LOGGING ---
          const nameMatch = existingNameLower === newLogNameLower;
          const typeMatch = existingType === newLogType;
@@ -713,7 +711,6 @@ async function saveAgenticLogs(state: AgentState): Promise<Partial<AgentState>> 
          console.log(`Agentic log #${index} skipped. Reason: ${result.value.reason}`);
       } else {
          console.log(`Agentic log #${index} saved successfully.`);
-         // TODO: Optionally update daily logs in state? Might be complex due to async nature.
          // For now, rely on the next fetchDailyContext in a subsequent turn.
       }
     } else { // status === 'rejected'
@@ -763,7 +760,7 @@ const graphArgs: StateGraphArgs<AgentState> = {
       value: (x?: KnowledgeLayerOutput, y?: KnowledgeLayerOutput) => y ?? x,
       default: () => undefined,
     },
-    sources: { // NEW Channel for sources
+    sources: { // Channel for sources
        value: (x?: Source[], y?: Source[]) => y ?? x,
        default: () => [],
     },
@@ -860,19 +857,19 @@ const workflow = new StateGraph<AgentState>(graphArgs);
 
 // Add nodes (using 'as any' to bypass type errors for now)
 workflow.addNode("processInput", processInput as any);
-workflow.addNode("loadSessionHistory", loadSessionHistory as any); // NEW node
-workflow.addNode("determineTimeContext", determineTimeContext as any); // NEW node
+workflow.addNode("loadSessionHistory", loadSessionHistory as any);
+workflow.addNode("determineTimeContext", determineTimeContext as any);
 workflow.addNode("identifyTargetDate", identifyTargetDate as any);
-workflow.addNode("fetchDailyContext", fetchDailyContext as any); // NEW node
+workflow.addNode("fetchDailyContext", fetchDailyContext as any);
 workflow.addNode("analyzeQueryForPersonalization", analyzeQueryForPersonalization as any);
 workflow.addNode("fetchUserData", fetchUserData as any);
-workflow.addNode("retrieveHistoricalContext", retrieveHistoricalContext as any); // NEW node
-workflow.addNode("calculateNetCalories", calculateNetCalories as any); // NEW node
+workflow.addNode("retrieveHistoricalContext", retrieveHistoricalContext as any);
+workflow.addNode("calculateNetCalories", calculateNetCalories as any);
 workflow.addNode("runKnowledgeLayer", runKnowledgeLayer as any);
 workflow.addNode("runReasoningLayer", runReasoningLayer as any);
 workflow.addNode("enrichAgenticLogIntents", enrichAgenticLogIntents as any); // Ensure this node is added
 workflow.addNode("saveAgenticLogs", saveAgenticLogs as any);
-workflow.addNode("refetchDailyContextAfterSave", fetchDailyContext as any); // NEW node name for the second fetch
+workflow.addNode("refetchDailyContextAfterSave", fetchDailyContext as any); // node name for the second fetch
 // Ensure calculateDailyCaloriesNode is removed from node additions
 workflow.addNode("runConversationLayer", runConversationLayer as any);
 
@@ -905,9 +902,9 @@ workflow.addEdge("retrieveHistoricalContext" as any, "runKnowledgeLayer" as any)
 workflow.addEdge("runKnowledgeLayer" as any, "runReasoningLayer" as any); // Knowledge -> Reasoning
 workflow.addEdge("runReasoningLayer" as any, "enrichAgenticLogIntents" as any); // Reasoning -> Enrich Intents
 workflow.addEdge("enrichAgenticLogIntents" as any, "saveAgenticLogs" as any); // Enrich Intents -> Save Logs
-workflow.addEdge("saveAgenticLogs" as any, "refetchDailyContextAfterSave" as any); // Save Logs -> NEW Re-fetch Node
+workflow.addEdge("saveAgenticLogs" as any, "refetchDailyContextAfterSave" as any); // Save Logs -> Re-fetch Node
 // workflow.addEdge("fetchDailyContext" as any, "calculateNetCalories" as any); // REMOVE incorrect edge from previous attempt
-workflow.addEdge("refetchDailyContextAfterSave" as any, "calculateNetCalories" as any); // NEW Re-fetch Node -> Calculate Net Calories
+workflow.addEdge("refetchDailyContextAfterSave" as any, "calculateNetCalories" as any); // Re-fetch Node -> Calculate Net Calories
 workflow.addEdge("calculateNetCalories" as any, "runConversationLayer" as any); // Calculate Net Calories -> Conversation
 workflow.addEdge("runConversationLayer" as any, END); // Conversation -> End
 

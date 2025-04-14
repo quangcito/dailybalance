@@ -135,11 +135,11 @@ export async function generatePersonalizedInsights(
   dailyFoodLogs: FoodLog[],
   dailyExerciseLogs: ExerciseLog[],
   dailyInteractionLogs: InteractionLog[],
-  // NEW: Add historical log parameters
+  // Add historical log parameters
   historicalFoodLogs: FoodLog[],
   historicalExerciseLogs: ExerciseLog[],
   historicalInteractionLogs: any[],
-  // NEW: Add calculated calorie parameters
+  // Add calculated calorie parameters
   dailyCaloriesConsumed?: number,
   dailyCaloriesBurned?: number,
   netCalories?: number

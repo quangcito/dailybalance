@@ -20,7 +20,6 @@ export function calculateBMR(profile: Pick<UserProfile, 'age' | 'gender' | 'heig
   // Assuming height is in cm and weight is in kg as per standard formulas.
   // Adjust if the UserProfile stores them differently (e.g., inches, lbs).
   // The current UserProfile type just says 'number', so we assume metric for now.
-  // TODO: Add unit conversion if necessary based on how data is stored/inputted.
 
   let bmr: number;
 
