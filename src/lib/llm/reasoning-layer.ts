@@ -3,7 +3,7 @@ import { UserProfile, InteractionLog } from '@/types/user'; // Added Interaction
 import { FoodLog } from '@/types/nutrition';
 import { ExerciseLog } from '@/types/exercise';
 import { KnowledgeLayerOutput } from './knowledge-layer'; // Updated import
-import { saveFoodLog, saveExerciseLog } from '../db/supabase.ts'; // Import save functions
+// Removed unused saveFoodLog, saveExerciseLog imports
 
 // Ensure environment variables are set
 const openaiApiKey = process.env.OPENAI_API_KEY;

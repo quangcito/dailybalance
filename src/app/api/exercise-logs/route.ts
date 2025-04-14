@@ -60,16 +60,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
 
-    // Basic validation: Check for essential fields defined in ExerciseLog type
-    if (
-      !newLogData.name ||
-      !newLogData.type ||
-      typeof newLogData.duration !== 'number' ||
-      !newLogData.intensity ||
-      typeof newLogData.caloriesBurned !== 'number'
-    ) {
-        return NextResponse.json({ error: 'Missing required fields (name, type, duration, intensity, caloriesBurned)' }, { status: 400 });
-    }
+    // Basic validation: Check for essential fields including date
+   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+   if (
+     !newLogData.name ||
+     !newLogData.type ||
+     typeof newLogData.duration !== 'number' ||
+     !newLogData.intensity ||
+     typeof newLogData.caloriesBurned !== 'number' ||
+     !newLogData.date || // Add date check
+     !dateRegex.test(newLogData.date) // Add date format check
+   ) {
+       return NextResponse.json({ error: 'Missing required fields (name, type, duration, intensity, caloriesBurned, date) or invalid date format (YYYY-MM-DD)' }, { status: 400 });
+   }
 
     console.log(`[API /api/exercise-logs] POST request for guestId: ${guestId}`);
 
@@ -85,9 +88,9 @@ export async function POST(req: NextRequest) {
         strengthDetails: newLogData.strengthDetails,
         cardioDetails: newLogData.cardioDetails,
         // Defaults
-        loggedAt: newLogData.loggedAt || new Date().toISOString(),
-        date: newLogData.date || new Date().toISOString().split('T')[0],
-        source: newLogData.source || 'user-input', // Default source
+        loggedAt: newLogData.loggedAt || new Date().toISOString(), // Default loggedAt timestamp if not provided
+       date: newLogData.date, // Use date provided by the client (validated above)
+       source: newLogData.source || 'user-input', // Default source
     };
 
     // Call the Supabase function to save the log (which also handles embedding)

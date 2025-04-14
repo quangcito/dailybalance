@@ -9,13 +9,17 @@ import { DailyStats, WeeklyStats } from '@/types/stats';
 
 // --- SWR Fetcher ---
 // Generic fetcher that includes the Guest ID header
-const fetcher = async (url: string) => {
-  const guestId = localStorage.getItem('guestId'); // Retrieve guestId from localStorage
-  if (!guestId) {
-    throw new Error('Guest ID not found in localStorage.');
-  }
+const fetcher = async ([url, params]: [string, Record<string, string>]) => { // Accept URL and params
+ const guestId = localStorage.getItem('guestId'); // Retrieve guestId from localStorage
+ if (!guestId) {
+   throw new Error('Guest ID not found in localStorage.');
+ }
 
-  const res = await fetch(url, {
+ // Construct URL with query parameters
+ const urlWithParams = new URL(url, window.location.origin);
+ Object.entries(params).forEach(([key, value]) => urlWithParams.searchParams.append(key, value));
+
+  const res = await fetch(urlWithParams.toString(), { // Use the constructed URL
     headers: {
       'X-Guest-ID': guestId, // Add the guest ID header
     },
@@ -32,21 +36,34 @@ const fetcher = async (url: string) => {
 
 
 export default function StatsPage() {
-  const [period, setPeriod] = useState<'daily' | 'weekly'>('daily'); // State for selected period
+  const [period, setPeriod] = useState<'daily' | 'weekly'>('daily');
   const [guestId, setGuestId] = useState<string | null>(null);
-  const [isGuestIdChecked, setIsGuestIdChecked] = useState<boolean>(false); // State to track if localStorage check is done
+  const [isGuestIdChecked, setIsGuestIdChecked] = useState<boolean>(false);
+  const [localDateStr, setLocalDateStr] = useState<string>(''); // State for local date string
 
   // Get guestId from localStorage on component mount (client-side only)
    useEffect(() => {
-    const storedGuestId = localStorage.getItem('guestId');
-    setGuestId(storedGuestId);
-    setIsGuestIdChecked(true); // Mark check as complete
-  }, []);
+   const storedGuestId = localStorage.getItem('guestId');
+   setGuestId(storedGuestId);
+   // Get local date string in YYYY-MM-DD format
+   const today = new Date();
+   const year = today.getFullYear();
+   const month = String(today.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
+   const day = String(today.getDate()).padStart(2, '0');
+   setLocalDateStr(`${year}-${month}-${day}`);
+
+   setIsGuestIdChecked(true); // Mark check as complete
+ }, []);
 
   // Use SWR to fetch stats based on the selected period
-  // The key changes when 'period' changes, triggering a re-fetch
-  const swrKey = guestId ? `/api/stats?period=${period}` : null;
-  const { data: statsData, error, isLoading } = useSWR<DailyStats | WeeklyStats>(swrKey, fetcher);
+ // The key is now an array: [url, params object]
+ // Include localDateStr when period is 'daily'
+ const swrParams: Record<string, string> = { period };
+ if (period === 'daily' && localDateStr) {
+   swrParams.date = localDateStr; // Add local date for daily requests
+ }
+ const swrKey = guestId && (period === 'weekly' || localDateStr) ? ['/api/stats', swrParams] : null;
+ const { data: statsData, error, isLoading } = useSWR<DailyStats | WeeklyStats>(swrKey, fetcher as any); // Use 'as any' for fetcher type with array key
 
   // Determine display error
   const displayError = error ? (error.message || "Failed to load statistics.") : null;
@@ -64,7 +81,7 @@ export default function StatsPage() {
       return (
         <Card>
           <CardHeader>
-            <CardTitle>Today's Summary ({dailyStats.date})</CardTitle>
+            <CardTitle>Today&apos;s Summary ({dailyStats.date})</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>

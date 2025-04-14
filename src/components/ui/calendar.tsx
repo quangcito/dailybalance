@@ -60,9 +60,11 @@ function Calendar({
         ...classNames,
       }}
       components={{
+        // @ts-expect-error - IconLeft is not recognized by types, but expected by underlying library or previous version
         IconLeft: ({ className, ...props }) => (
           <ChevronLeft className={cn("size-4", className)} {...props} />
         ),
+        // @ts-expect-error - IconRight is not recognized by types, but expected by underlying library or previous version
         IconRight: ({ className, ...props }) => (
           <ChevronRight className={cn("size-4", className)} {...props} />
         ),

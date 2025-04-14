@@ -58,10 +58,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
 
-    // Basic validation: Check for essential fields
-    if (!newLogData.name || typeof newLogData.calories !== 'number') {
-        return NextResponse.json({ error: 'Missing required fields (name, calories)' }, { status: 400 });
-    }
+    // Basic validation: Check for essential fields including date
+   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+   if (!newLogData.name || typeof newLogData.calories !== 'number' || !newLogData.date || !dateRegex.test(newLogData.date)) {
+       return NextResponse.json({ error: 'Missing required fields (name, calories, date) or invalid date format (YYYY-MM-DD)' }, { status: 400 });
+   }
 
     console.log(`[API /api/food-logs] POST request for guestId: ${guestId}`);
 
@@ -76,9 +77,9 @@ export async function POST(req: NextRequest) {
         macros: newLogData.macros,
         micronutrients: newLogData.micronutrients,
         mealType: newLogData.mealType || 'snack', // Default mealType if not provided
-        loggedAt: newLogData.loggedAt || new Date().toISOString(), // Default loggedAt if not provided
-        date: newLogData.date || new Date().toISOString().split('T')[0], // Default date if not provided
-        source: newLogData.source || 'user-input', // Default source to 'user-input'
+        loggedAt: newLogData.loggedAt || new Date().toISOString(), // Default loggedAt timestamp if not provided
+       date: newLogData.date, // Use date provided by the client (validated above)
+       source: newLogData.source || 'user-input', // Default source to 'user-input'
     };
 
     // Call the Supabase function to save the log (which also handles embedding)

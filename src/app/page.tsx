@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
@@ -186,7 +186,7 @@ const GuestOnboardingDialog = ({ open, onOpenChange, onSubmit }: { open: boolean
                 <DialogHeader>
                     <DialogTitle>Welcome! Tell us a bit about yourself.</DialogTitle>
                     <DialogDescription>
-                        This helps us personalize your experience. Fill in what you're comfortable with.
+                        This helps us personalize your experience. Fill in what you&apos;re comfortable with.
                     </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleFormSubmit} className="space-y-6 py-4"> {/* Increased space between sections */}
@@ -452,7 +452,7 @@ export default function Home() { // Remove explicit JSX.Element return type for 
              try {
                 const errorData = await response.json();
                 errorDetails = errorData.error || errorData.details || errorDetails;
-             } catch (jsonError) {
+             } catch { // Removed unused jsonError
                 errorDetails = response.statusText || errorDetails;
              }
             throw new Error(`Failed to fetch history: ${errorDetails}`);
@@ -534,7 +534,7 @@ export default function Home() { // Remove explicit JSX.Element return type for 
           try {
               const errorData = await response.json();
               errorDetails = errorData.error || errorData.details || errorDetails;
-          } catch (jsonError) {
+          } catch { // Removed unused jsonError
               errorDetails = response.statusText || errorDetails;
           }
           throw new Error(errorDetails);
@@ -585,7 +585,7 @@ export default function Home() { // Remove explicit JSX.Element return type for 
         try {
           const errorData = await response.json();
           errorDetails = errorData.error || errorData.details || errorDetails;
-        } catch (jsonError) {
+        } catch { // Removed unused jsonError
           errorDetails = response.statusText || errorDetails;
         }
         throw new Error(errorDetails);
@@ -636,7 +636,7 @@ export default function Home() { // Remove explicit JSX.Element return type for 
 
       {/* Main Chat Area */}
       <main className="flex-1 overflow-y-auto px-6 md:px-8 pt-6 md:pt-8 pb-0 space-y-8"> {/* Adjusted padding: Removed bottom padding */}
-        {Array.from(groupedMessages.entries()).map((entry: [string, ConversationMessage[]], mapIndex: number) => {
+        {Array.from(groupedMessages.entries()).map((entry: [string, ConversationMessage[]]) => { // Removed unused mapIndex
           const [dateString, messagesForDate] = entry;
           return ( // Add return statement
           <React.Fragment key={dateString}>

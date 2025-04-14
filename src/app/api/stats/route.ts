@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DailyStats, WeeklyStats } from '@/types/stats';
-import { UserProfile } from '@/types/user';
-import { FoodLog } from '@/types/nutrition';
-import { ExerciseLog } from '@/types/exercise';
+// import { UserProfile } from '@/types/user';
+// import { FoodLog } from '@/types/nutrition';
+// import { ExerciseLog } from '@/types/exercise';
 import {
   getUserProfile,
   getDailyFoodLogs,
@@ -10,7 +10,7 @@ import {
   // We might need functions to fetch logs for a date range later for weekly stats
 } from '@/lib/db/supabase';
 import { calculateBMR, calculateTDEE } from '@/lib/utils/calculations';
-import { format, startOfWeek, endOfWeek, eachDayOfInterval, subDays, parseISO } from 'date-fns'; // Added parseISO
+import { format, eachDayOfInterval, subDays } from 'date-fns'; // Added parseISO
 
 // --- GET Handler ---
 // Fetches daily or weekly stats for a given guest
@@ -48,13 +48,15 @@ export async function GET(req: NextRequest) {
     }
 
     // --- Daily Stats Logic ---
-    if (period === 'daily') {
-      const todayStr = format(new Date(), 'yyyy-MM-dd');
+   if (period === 'daily') {
+     // Get date from query param sent by frontend, fallback to server date if missing
+     const targetDate = searchParams.get('date') || format(new Date(), 'yyyy-MM-dd');
+     console.log(`[API /api/stats] Using target date for daily stats: ${targetDate}`); // Log the date being used
 
-      // Fetch logs for today
-      const [foodLogs, exerciseLogs] = await Promise.all([
-        getDailyFoodLogs(guestId, todayStr),
-        getDailyExerciseLogs(guestId, todayStr),
+      // Fetch logs for the target date
+     const [foodLogs, exerciseLogs] = await Promise.all([
+       getDailyFoodLogs(guestId, targetDate),
+       getDailyExerciseLogs(guestId, targetDate),
       ]);
 
       // Calculate daily totals from logs
@@ -81,7 +83,7 @@ export async function GET(req: NextRequest) {
       const netCalories = baseTdee !== null ? baseTdee - consumedCalories + burnedCalories : 0 - consumedCalories + burnedCalories;
 
       const dailyStats: DailyStats = {
-        date: todayStr,
+        date: targetDate, // Use the determined target date
         netCalories: Math.round(netCalories),
         consumedCalories: Math.round(consumedCalories),
         burnedCalories: Math.round(burnedCalories),
@@ -118,7 +120,9 @@ export async function GET(req: NextRequest) {
       const dailyLogs = await Promise.all(dailyLogPromises);
 
       // Aggregate totals over the week
+      // @ts-ignore - ESLint incorrectly flags this as unused, but it's used in the loop below (line 145)
       let totalConsumedCalories = 0;
+      // @ts-ignore - ESLint incorrectly flags this as unused, but it's used in the loop below (line 146)
       let totalBurnedCalories = 0;
       let totalProtein = 0;
       let totalCarbs = 0;

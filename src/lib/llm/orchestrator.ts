@@ -1,11 +1,10 @@
 import { StateGraph, END, StateGraphArgs, addMessages } from "@langchain/langgraph"; // Import addMessages
 import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, AIMessage, BaseMessage } from "@langchain/core/messages"; // Import AIMessage and BaseMessage
-import { RunnableLambda } from "@langchain/core/runnables";
 import { StructuredAnswer, Source } from "@/types/conversation"; // Import existing types
 
 import { getFactualInformation, KnowledgeLayerOutput } from './knowledge-layer'; // Updated import
-import { generatePersonalizedInsights, ReasoningOutput, AgenticLogIntent } from './reasoning-layer.ts'; // Import AgenticLogIntent
+import { generatePersonalizedInsights, ReasoningOutput } from './reasoning-layer.ts'; // Removed AgenticLogIntent
 import { generateFinalResponse } from './conversation-layer.ts';
 import { UserProfile, InteractionLog } from '@/types/user';
 import { FoodLog } from '@/types/nutrition';
@@ -133,7 +132,7 @@ async function loadSessionHistory(state: AgentState): Promise<Partial<AgentState
 }
 
 // --- NODE: Determine Time Context ---
-async function determineTimeContext(state: AgentState): Promise<Partial<AgentState>> {
+async function determineTimeContext(): Promise<Partial<AgentState>> { // Removed unused 'state' parameter
     console.log("--- Step: Determine Time Context ---");
     const now = new Date();
     // Use Los Angeles time zone for consistency with environment_details
@@ -462,14 +461,14 @@ async function runReasoningLayer(state: AgentState): Promise<Partial<AgentState>
   const lastMessage = state.messages[state.messages.length - 1];
   const query = typeof lastMessage.content === 'string' ? lastMessage.content : JSON.stringify(lastMessage.content);
   const knowledgeOutput = state.knowledgeResponse; // Get the full output object
-  const userId = state.userId;
+  // const userId = state.userId; // Unused variable
 
   // UserProfile and UserGoals are now potentially populated in the state
   const userProfile = state.userProfile ?? null;
   // const userGoals = state.userGoals ?? []; // Goals are now in userProfile
   // Get time context from state
   const timeContext = state.timeContext ?? 'Midday'; // Use determined context or default
-  const targetDate = state.targetDate ?? new Date().toISOString().split('T')[0]; // Use identified date or default
+  // const targetDate = state.targetDate ?? new Date().toISOString().split('T')[0]; // Unused variable
   // Get daily and historical logs from state
   const dailyFoodLogs = state.dailyFoodLogs ?? [];
   const dailyExerciseLogs = state.dailyExerciseLogs ?? [];
@@ -527,10 +526,10 @@ async function runConversationLayer(state: AgentState): Promise<Partial<AgentSta
   const dailyCaloriesConsumed = state.dailyCaloriesConsumed; // Get from state
   const dailyCaloriesBurned = state.dailyCaloriesBurned; // Get from state
   const netCalories = state.netCalories; // Get from state
-  const targetDate = state.targetDate ?? new Date().toISOString().split('T')[0]; // Get target date
+  // const targetDate = state.targetDate ?? new Date().toISOString().split('T')[0]; // Unused variable
   const sources = state.sources ?? []; // Get sources from state
   // History is now part of state.messages, loaded by loadSessionHistory node
-  const fullMessageHistory = state.messages || [];
+  // const fullMessageHistory = state.messages || []; // Unused variable
 
   // --- Prepare data for Conversation Layer ---
   // Pass reasoning output directly. The conversation layer will use derivedData from it.
@@ -911,23 +910,4 @@ workflow.addEdge("runConversationLayer" as any, END); // Conversation -> End
 // Compile the graph
 export const app = workflow.compile();
 
-// Example usage (for testing purposes, might be called from API route)
-async function runOrchestrator(input: string, userId?: string, conversationId?: string) {
-  const initialState: AgentState = {
-      messages: [new HumanMessage(input)],
-      userId,
-      conversationId,
-      // Initialize other state properties if needed
-  };
-  console.log("--- Initial State ---");
-  console.log(initialState);
-  const result = await app.invoke(initialState);
-  console.log("--- Orchestrator Result ---");
-  console.log(JSON.stringify(result, null, 2)); // Pretty print result
-  // The final state, including the structured answer and all messages, will be in result.
-  return result;
-}
-
-// Example call:
-// runOrchestrator("What should I eat for lunch today?", "user-123", "conv-abc");
-// runOrchestrator("What should I eat for lunch today?");
+// Removed unused runOrchestrator function

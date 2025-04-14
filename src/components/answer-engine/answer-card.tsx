@@ -63,7 +63,7 @@ const AnswerCard: React.FC<AnswerCardProps> = ({ answer, sources }) => {
                                 </a>
                                 {source.snippet && (
                                     <p className="text-muted-foreground italic mt-0.5 pl-4"> {/* Indent snippet */}
-                                        "{source.snippet}"
+                                        &quot;{source.snippet}&quot;
                                     </p>
                                 )}
                             </li>

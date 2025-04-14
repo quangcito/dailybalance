@@ -426,9 +426,9 @@ const dbLogEntry = {
   user_id: log.userId,
   name: log.name,
   calories: log.calories,
-  logged_at: log.loggedAt || new Date().toISOString(), // Default to now if not provided
-  date: log.date || new Date().toISOString().split('T')[0], // Default to today if not provided
-  source: log.source || 'unknown', // Default source
+  logged_at: log.loggedAt || new Date().toISOString(), // Default timestamp to now if not provided
+ date: log.date, // Remove server-side default, date MUST be provided by caller
+ source: log.source || 'unknown', // Default source
 
   // Map optional fields
   description: log.description,
@@ -492,9 +492,9 @@ export async function saveExerciseLog(log: ExerciseLog): Promise<void> {
     user_id: log.userId,
     name: log.name,
     type: log.type,
-    logged_at: log.loggedAt || new Date().toISOString(),
-    date: log.date || new Date().toISOString().split('T')[0],
-    source: log.source || 'unknown',
+    logged_at: log.loggedAt || new Date().toISOString(), // Default timestamp to now if not provided
+   date: log.date, // Remove server-side default, date MUST be provided by caller
+   source: log.source || 'unknown', // Default source
 
     // Map optional fields
     duration: log.duration,
