@@ -1,22 +1,80 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-## Getting Started
+## Running Locally
 
-First, run the development server:
+To run this application locally, follow these steps:
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1.  **Clone the repository:**
+    ```bash
+    git clone <your-repository-url>
+    cd <repository-directory>
+    ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2.  **Install dependencies:**
+    ```bash
+    npm install
+    # or yarn install or pnpm install
+    ```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3.  **Set up Environment Variables:**
+    *   Copy the example environment file (if one exists, e.g., `.env.example`) to `.env.local`:
+        ```bash
+        cp .env.example .env.local
+        ```
+    *   If no example file exists, create a new file named `.env.local` in the root directory.
+    *   Fill in the required environment variables in `.env.local`. You will need credentials/URLs for:
+        *   **Supabase:** Project URL and Anon Key (obtain from your Supabase project dashboard).
+        *   **OpenAI:** API Key (obtain from OpenAI).
+        *   **Perplexity AI:** API Key (obtain from Perplexity).
+        *   **Pinecone:** API Key and Environment (obtain from Pinecone).
+        *   *(Note: Upstash Redis is planned but not yet implemented, so no keys are needed for it at this time.)*
+
+    Example `.env.local` structure:
+    ```plaintext
+    # Supabase
+    NEXT_PUBLIC_SUPABASE_URL=YOUR_SUPABASE_URL
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+    SUPABASE_SERVICE_ROLE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY # If needed for backend operations
+
+    # OpenAI
+    OPENAI_API_KEY=YOUR_OPENAI_API_KEY
+
+    # Perplexity
+    PERPLEXITY_API_KEY=YOUR_PERPLEXITY_API_KEY
+
+    # Pinecone
+    PINECONE_API_KEY=YOUR_PINECONE_API_KEY
+    PINECONE_ENVIRONMENT=YOUR_PINECONE_ENVIRONMENT
+    PINECONE_INDEX_NAME=your-pinecone-index-name # Or make this configurable
+
+    ```
+
+4.  **Set up Local Supabase Database (using Supabase CLI):**
+    *   Ensure you have the [Supabase CLI](https://supabase.com/docs/guides/cli) installed.
+    *   Log in to the CLI: `supabase login`
+    *   Link your local project to your Supabase project (replace `<project-ref>` with your actual project reference ID from the Supabase dashboard):
+        ```bash
+        supabase link --project-ref <project-ref>
+        # Follow prompts, potentially needing a database password
+        ```
+    *   Start the local Supabase services:
+        ```bash
+        supabase start
+        ```
+        *(Note: This spins up local Docker containers for Postgres, GoTrue, etc. Make sure Docker is running.)*
+    *   Apply migrations to your local database:
+        ```bash
+        supabase db reset
+        ```
+        *(This command drops the local DB and reapplies all migrations from `supabase/migrations/`. Remember to commit your migration files to Git!)*
+
+5.  **Run the development server:**
+    ```bash
+    npm run dev
+    # or yarn dev or pnpm dev
+    ```
+
+6.  Open [http://localhost:3000](http://localhost:3000) (or the specified port) in your browser to view the application.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
