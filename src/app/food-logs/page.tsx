@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import useSWR from 'swr'; // Import useSWR
 import { format } from 'date-fns';
 import { Calendar as CalendarIcon, PlusCircle } from "lucide-react";
 
@@ -29,7 +30,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  DialogClose, // Import DialogClose
+  DialogClose,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
@@ -39,12 +40,35 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label"; // Assuming Label exists or add it: npx shadcn@latest add label
+import { Label } from "@/components/ui/label";
 
 import { FoodLog } from '@/types/nutrition';
 import { cn } from "@/lib/utils";
 
-// --- Food Log Table Component ---
+// --- SWR Fetcher ---
+// Generic fetcher that includes the Guest ID header
+const fetcher = async (url: string) => {
+  const guestId = localStorage.getItem('guestId'); // Retrieve guestId from localStorage
+  if (!guestId) {
+    throw new Error('Guest ID not found in localStorage.');
+  }
+
+  const res = await fetch(url, {
+    headers: {
+      'X-Guest-ID': guestId, // Add the guest ID header
+    },
+  });
+
+  if (!res.ok) {
+    const errorInfo = await res.json().catch(() => ({})); // Try to parse error JSON
+    const error = new Error(errorInfo.error || `An error occurred while fetching the data. Status: ${res.status}`);
+    throw error;
+  }
+
+  return res.json();
+};
+
+// --- Food Log Table Component (Unchanged) ---
 const FoodLogTable = ({ logs }: { logs: FoodLog[] }) => {
   const dailyTotals = useMemo(() => {
     return logs.reduce(
@@ -100,7 +124,8 @@ const FoodLogTable = ({ logs }: { logs: FoodLog[] }) => {
 };
 
 // --- Add Food Log Dialog Component ---
-const AddFoodLogDialog = ({ selectedDate, onLogAdded }: { selectedDate: Date, onLogAdded: () => void }) => {
+// Accepts mutateLogs function from SWR to trigger revalidation
+const AddFoodLogDialog = ({ selectedDate, mutateLogs }: { selectedDate: Date, mutateLogs: () => void }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -128,21 +153,30 @@ const AddFoodLogDialog = ({ selectedDate, onLogAdded }: { selectedDate: Date, on
     setIsSubmitting(true);
     setError(null);
 
+    const guestId = localStorage.getItem('guestId');
+    if (!guestId) {
+        setError("Guest ID not found. Cannot save log.");
+        setIsSubmitting(false);
+        return;
+    }
+
     const logData: Partial<FoodLog> = {
+      // userId will be set by the backend using the header
       date: format(selectedDate, 'yyyy-MM-dd'),
-      mealType: formData.mealType as FoodLog['mealType'],
+      mealType: formData.mealType as FoodLog['mealType'] || undefined, // Send undefined if empty
       name: formData.name,
-      calories: Number(formData.calories) || 0,
+      calories: Number(formData.calories) || undefined, // Send undefined if 0 or NaN
       portionSize: formData.portionSize || undefined,
       macros: {
-        protein: Number(formData.protein) || 0,
+        protein: Number(formData.protein) || 0, // Default to 0 if empty/NaN
         carbs: Number(formData.carbs) || 0,
         fat: Number(formData.fat) || 0,
       },
+      source: 'user-input', // Explicitly set source
     };
 
     // Basic Validation
-    if (!logData.mealType || !logData.name || !logData.calories) {
+    if (!logData.mealType || !logData.name || logData.calories === undefined) {
         setError("Meal Type, Name, and Calories are required.");
         setIsSubmitting(false);
         return;
@@ -151,19 +185,22 @@ const AddFoodLogDialog = ({ selectedDate, onLogAdded }: { selectedDate: Date, on
     try {
       const response = await fetch('/api/food-logs', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Guest-ID': guestId, // Include guest ID header
+        },
         body: JSON.stringify(logData),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
 
       // Reset form and close dialog on success
       setFormData({ mealType: '', name: '', calories: '', portionSize: '', protein: '', carbs: '', fat: '' });
       setIsOpen(false);
-      onLogAdded(); // Callback to refresh the log list
+      mutateLogs(); // Trigger SWR revalidation to refresh the list
 
     } catch (err: any) {
       console.error("Failed to submit food log:", err);
@@ -237,7 +274,6 @@ const AddFoodLogDialog = ({ selectedDate, onLogAdded }: { selectedDate: Date, on
           </div>
           {error && <p className="text-sm text-red-500 mb-4">{error}</p>}
           <DialogFooter>
-             {/* Use DialogClose for the Cancel button */}
              <DialogClose asChild>
                 <Button type="button" variant="outline">Cancel</Button>
              </DialogClose>
@@ -255,46 +291,26 @@ const AddFoodLogDialog = ({ selectedDate, onLogAdded }: { selectedDate: Date, on
 // --- Main Page Component ---
 export default function FoodLogsPage() {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
-  const [logs, setLogs] = useState<FoodLog[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // Removed showAddForm state, handled by Dialog internal state
+  const [guestId, setGuestId] = useState<string | null>(null);
+
+  // Get guestId from localStorage on component mount (client-side only)
+   useEffect(() => {
+    const storedGuestId = localStorage.getItem('guestId');
+    setGuestId(storedGuestId);
+  }, []);
 
   const formattedDate = useMemo(() => {
-    return selectedDate ? format(selectedDate, 'yyyy-MM-dd') : '';
+    return selectedDate ? format(selectedDate, 'yyyy-MM-dd') : null;
   }, [selectedDate]);
 
-  const fetchLogs = async (dateToFetch: string) => {
-      if (!dateToFetch) return;
-      setIsLoading(true);
-      setError(null);
-      try {
-        const response = await fetch(`/api/food-logs?date=${dateToFetch}`);
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-        }
-        const data: FoodLog[] = await response.json();
-        setLogs(data);
-      } catch (err: any) {
-        console.error("Failed to fetch food logs:", err);
-        setError(`Failed to load logs: ${err.message}`);
-        setLogs([]); // Clear logs on error
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  // Use SWR to fetch logs for the selected date
+  // The key includes the date, so SWR automatically re-fetches when the date changes
+  // Conditional fetching: only fetch if guestId and formattedDate are available
+  const swrKey = guestId && formattedDate ? `/api/food-logs?date=${formattedDate}` : null;
+  const { data: logs, error, isLoading, mutate: mutateLogs } = useSWR<FoodLog[]>(swrKey, fetcher);
 
-  // Fetch logs when the selected date changes
-  useEffect(() => {
-    fetchLogs(formattedDate);
-  }, [formattedDate]);
-
-  // Callback passed to the dialog to refresh logs after adding
-  const handleLogAdded = () => {
-     console.log("Log added, re-fetching...");
-     fetchLogs(formattedDate); // Re-fetch logs for the current date
-  }
+  // Determine display error
+  const displayError = error ? (error.message || "Failed to load logs.") : null;
 
   return (
     <div className="container mx-auto p-4">
@@ -325,17 +341,21 @@ export default function FoodLogsPage() {
            </PopoverContent>
          </Popover>
 
-         {/* Add Log Dialog Trigger */}
-         <AddFoodLogDialog selectedDate={selectedDate || new Date()} onLogAdded={handleLogAdded} />
+         {/* Add Log Dialog Trigger - Pass mutateLogs */}
+         <AddFoodLogDialog selectedDate={selectedDate || new Date()} mutateLogs={mutateLogs} />
       </div>
 
 
       {/* Loading and Error States */}
       {isLoading && <p className="text-center py-4">Loading logs...</p>}
-      {error && <p className="text-red-500 text-center py-4">{error}</p>}
+      {displayError && !isLoading && <p className="text-red-500 text-center py-4">{displayError}</p>}
+      {!guestId && !isLoading && <p className="text-orange-500 text-center py-4">Guest ID not found. Cannot load or save logs.</p>}
+
 
       {/* Display Logs Table */}
-      {!isLoading && !error && <FoodLogTable logs={logs} />}
+      {!isLoading && !displayError && logs && <FoodLogTable logs={logs} />}
+      {!isLoading && !displayError && !logs && swrKey && <p className="text-center py-4">No logs found for this date.</p> /* Show if fetch was attempted but returned null/undefined */}
+
 
     </div>
   );

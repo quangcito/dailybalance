@@ -1,160 +1,175 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import useSWR from 'swr'; // Import useSWR
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { DailyStats, WeeklyStats } from '@/types/stats'; // Assuming types are defined here
+import { Button } from '@/components/ui/button'; // Import Button for period toggle
+import { DailyStats, WeeklyStats } from '@/types/stats';
 
-// Mock API fetching functions (replace with actual API calls)
-const fetchDailyStats = async (): Promise<DailyStats> => {
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 800));
-  // Return mock data (Corrected: removed duplicate properties)
-  return {
-    date: new Date().toISOString().split('T')[0],
-    // Example values based on comments during previous attempt:
-    // Assume TDEE is 2300. Consumed 2200, Burned 400.
-    // Net = TDEE - Consumed + Burned = 2300 - 2200 + 400 = 500 surplus.
-    consumedCalories: 2200,
-    burnedCalories: 400,
-    netCalories: 500,
-    macros: {
-      protein: 150, // grams
-      carbs: 250,   // grams
-      fat: 70,      // grams
+// --- SWR Fetcher ---
+// Generic fetcher that includes the Guest ID header
+const fetcher = async (url: string) => {
+  const guestId = localStorage.getItem('guestId'); // Retrieve guestId from localStorage
+  if (!guestId) {
+    throw new Error('Guest ID not found in localStorage.');
+  }
+
+  const res = await fetch(url, {
+    headers: {
+      'X-Guest-ID': guestId, // Add the guest ID header
     },
-    totalExerciseDuration: 60, // minutes
-  };
-};
+  });
 
-const fetchWeeklyStats = async (): Promise<WeeklyStats> => {
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 1200));
-  // Return mock data
-  const today = new Date();
-  const weekAgo = new Date(today);
-  weekAgo.setDate(today.getDate() - 6);
+  if (!res.ok) {
+    const errorInfo = await res.json().catch(() => ({})); // Try to parse error JSON
+    const error = new Error(errorInfo.error || `An error occurred while fetching the data. Status: ${res.status}`);
+    throw error;
+  }
 
-  return {
-    startDate: weekAgo.toISOString().split('T')[0],
-    endDate: today.toISOString().split('T')[0],
-    averageNetCalories: 450,
-    averageMacros: {
-      protein: 145,
-      carbs: 260,
-      fat: 75,
-    },
-    totalExerciseDuration: 320, // minutes
-  };
+  return res.json();
 };
 
 
 export default function StatsPage() {
-  const [dailyStats, setDailyStats] = useState<DailyStats | null>(null);
-  const [weeklyStats, setWeeklyStats] = useState<WeeklyStats | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [period, setPeriod] = useState<'daily' | 'weekly'>('daily'); // State for selected period
+  const [guestId, setGuestId] = useState<string | null>(null);
 
-  useEffect(() => {
-    const loadStats = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        // Fetch in parallel
-        const [dailyData, weeklyData] = await Promise.all([
-          fetchDailyStats(),
-          fetchWeeklyStats(),
-        ]);
-        setDailyStats(dailyData);
-        setWeeklyStats(weeklyData);
-      } catch (err) {
-        console.error("Failed to fetch stats:", err);
-        setError("Failed to load statistics. Please try again later.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  // Get guestId from localStorage on component mount (client-side only)
+   useEffect(() => {
+    const storedGuestId = localStorage.getItem('guestId');
+    setGuestId(storedGuestId);
+  }, []);
 
-    loadStats();
-  }, []); // Run only on mount
+  // Use SWR to fetch stats based on the selected period
+  // The key changes when 'period' changes, triggering a re-fetch
+  const swrKey = guestId ? `/api/stats?period=${period}` : null;
+  const { data: statsData, error, isLoading } = useSWR<DailyStats | WeeklyStats>(swrKey, fetcher);
 
-  // Calculate progress for visualization (example: % of 2300 kcal goal)
-  const calorieGoal = 2300; // Example goal, could come from profile
-  const dailyConsumedPercent = dailyStats ? (dailyStats.consumedCalories / calorieGoal) * 100 : 0;
+  // Determine display error
+  const displayError = error ? (error.message || "Failed to load statistics.") : null;
+
+  // Example calorie goal (could eventually come from user profile)
+  const calorieGoal = 2300;
+
+  // Helper to render stats based on period
+  const renderStats = () => {
+    if (!statsData) return null;
+
+    if (period === 'daily') {
+      const dailyStats = statsData as DailyStats;
+      const dailyConsumedPercent = (dailyStats.consumedCalories / calorieGoal) * 100;
+      return (
+        <Card>
+          <CardHeader>
+            <CardTitle>Today's Summary ({dailyStats.date})</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <p className="font-semibold">Net Calories:</p>
+              <p className="text-2xl">{dailyStats.netCalories} kcal</p>
+              <p className="text-sm text-muted-foreground">
+                (Consumed: {dailyStats.consumedCalories} kcal - Burned: {dailyStats.burnedCalories} kcal)
+              </p>
+            </div>
+            <div>
+              <p className="font-semibold">Calorie Consumption Progress:</p>
+              <Progress value={dailyConsumedPercent} className="w-full" />
+              <p className="text-sm text-muted-foreground">{dailyStats.consumedCalories} / {calorieGoal} kcal goal</p>
+            </div>
+            <div>
+              <p className="font-semibold">Macronutrients:</p>
+              <ul className="list-disc list-inside text-sm">
+                <li>Protein: {dailyStats.macros.protein} g</li>
+                <li>Carbs: {dailyStats.macros.carbs} g</li>
+                <li>Fat: {dailyStats.macros.fat} g</li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-semibold">Total Exercise:</p>
+              <p>{dailyStats.totalExerciseDuration} minutes</p>
+            </div>
+          </CardContent>
+        </Card>
+      );
+    } else if (period === 'weekly') {
+      const weeklyStats = statsData as WeeklyStats;
+      return (
+        <Card>
+          <CardHeader>
+            <CardTitle>Weekly Summary ({weeklyStats.startDate} to {weeklyStats.endDate})</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <p className="font-semibold">Average Net Calories:</p>
+              <p className="text-2xl">{weeklyStats.averageNetCalories} kcal / day</p>
+            </div>
+            <div>
+              <p className="font-semibold">Average Macronutrients (per day):</p>
+              <ul className="list-disc list-inside text-sm">
+                <li>Protein: {weeklyStats.averageMacros.protein} g</li>
+                <li>Carbs: {weeklyStats.averageMacros.carbs} g</li>
+                <li>Fat: {weeklyStats.averageMacros.fat} g</li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-semibold">Total Weekly Exercise:</p>
+              <p>{weeklyStats.totalExerciseDuration} minutes</p>
+            </div>
+          </CardContent>
+        </Card>
+      );
+    }
+    return null;
+  };
 
   return (
     <div className="container mx-auto p-4 md:p-6 lg:p-8">
       <h1 className="text-3xl font-bold mb-6">Statistics</h1>
 
-      {/* Conditional Rendering for Loading State */}
+      {/* Period Toggle Buttons */}
+      <div className="flex gap-2 mb-6">
+        <Button
+          variant={period === 'daily' ? 'default' : 'outline'}
+          onClick={() => setPeriod('daily')}
+        >
+          Daily
+        </Button>
+        <Button
+          variant={period === 'weekly' ? 'default' : 'outline'}
+          onClick={() => setPeriod('weekly')}
+        >
+          Weekly
+        </Button>
+      </div>
+
+      {/* Loading State */}
       {isLoading && <p>Loading statistics...</p>}
 
-      {/* Conditional Rendering for Error State */}
-      {error && <p className="text-red-500">{error}</p>}
+      {/* Error State */}
+      {displayError && !isLoading && <p className="text-red-500">{displayError}</p>}
+      {!guestId && !isLoading && <p className="text-orange-500">Guest ID not found. Cannot load stats.</p>}
 
-      {/* Conditional Rendering for Success State */}
-      {!isLoading && !error && dailyStats && weeklyStats && (
+
+      {/* Success State - Render stats based on period */}
+      {!isLoading && !displayError && statsData && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Daily Stats Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Today's Summary ({dailyStats.date})</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <p className="font-semibold">Net Calories:</p>
-                <p className="text-2xl">{dailyStats.netCalories} kcal</p>
-                <p className="text-sm text-muted-foreground">
-                  (Consumed: {dailyStats.consumedCalories} kcal - Burned: {dailyStats.burnedCalories} kcal)
-                  {/* Assuming TDEE is implicitly part of Net calculation */}
-                </p>
-              </div>
-              <div>
-                <p className="font-semibold">Calorie Consumption Progress:</p>
-                <Progress value={dailyConsumedPercent} className="w-full" />
-                <p className="text-sm text-muted-foreground">{dailyStats.consumedCalories} / {calorieGoal} kcal goal</p>
-              </div>
-              <div>
-                <p className="font-semibold">Macronutrients:</p>
-                <ul className="list-disc list-inside text-sm">
-                  <li>Protein: {dailyStats.macros.protein} g</li>
-                  <li>Carbs: {dailyStats.macros.carbs} g</li>
-                  <li>Fat: {dailyStats.macros.fat} g</li>
-                </ul>
-              </div>
-              <div>
-                <p className="font-semibold">Total Exercise:</p>
-                <p>{dailyStats.totalExerciseDuration} minutes</p>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Render the appropriate stats card */}
+          {renderStats()}
 
-          {/* Weekly Stats Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Weekly Summary ({weeklyStats.startDate} to {weeklyStats.endDate})</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <p className="font-semibold">Average Net Calories:</p>
-                <p className="text-2xl">{weeklyStats.averageNetCalories} kcal / day</p>
-              </div>
-              <div>
-                <p className="font-semibold">Average Macronutrients (per day):</p>
-                <ul className="list-disc list-inside text-sm">
-                  <li>Protein: {weeklyStats.averageMacros.protein} g</li>
-                  <li>Carbs: {weeklyStats.averageMacros.carbs} g</li>
-                  <li>Fat: {weeklyStats.averageMacros.fat} g</li>
-                </ul>
-              </div>
-              <div>
-                <p className="font-semibold">Total Weekly Exercise:</p>
-                <p>{weeklyStats.totalExerciseDuration} minutes</p>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Placeholder for potential second card (e.g., charts, trends) */}
+          {/* <Card>
+            <CardHeader><CardTitle>Trends (Placeholder)</CardTitle></CardHeader>
+            <CardContent><p>Charts or trend data could go here.</p></CardContent>
+          </Card> */}
         </div>
       )}
+
+       {/* No Data State */}
+       {!isLoading && !displayError && !statsData && swrKey && (
+         <p>No statistics data available for the selected period.</p>
+       )}
+
     </div>
   );
 }

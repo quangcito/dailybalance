@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import useSWR from 'swr'; // Import useSWR
 import { format } from 'date-fns';
 import { Calendar as CalendarIcon, PlusCircle } from "lucide-react";
 
@@ -44,7 +45,31 @@ import { Label } from "@/components/ui/label";
 import { ExerciseLog } from '@/types/exercise';
 import { cn } from "@/lib/utils";
 
-// --- Exercise Log Table Component ---
+// --- SWR Fetcher ---
+// Generic fetcher that includes the Guest ID header
+const fetcher = async (url: string) => {
+  const guestId = localStorage.getItem('guestId'); // Retrieve guestId from localStorage
+  if (!guestId) {
+    throw new Error('Guest ID not found in localStorage.');
+  }
+
+  const res = await fetch(url, {
+    headers: {
+      'X-Guest-ID': guestId, // Add the guest ID header
+    },
+  });
+
+  if (!res.ok) {
+    const errorInfo = await res.json().catch(() => ({})); // Try to parse error JSON
+    const error = new Error(errorInfo.error || `An error occurred while fetching the data. Status: ${res.status}`);
+    throw error;
+  }
+
+  return res.json();
+};
+
+
+// --- Exercise Log Table Component (Unchanged) ---
 const ExerciseLogTable = ({ logs }: { logs: ExerciseLog[] }) => {
   const dailyTotals = useMemo(() => {
     return logs.reduce(
@@ -101,7 +126,8 @@ const ExerciseLogTable = ({ logs }: { logs: ExerciseLog[] }) => {
 };
 
 // --- Add Exercise Log Dialog Component ---
-const AddExerciseLogDialog = ({ selectedDate, onLogAdded }: { selectedDate: Date, onLogAdded: () => void }) => {
+// Accepts mutateLogs function from SWR to trigger revalidation
+const AddExerciseLogDialog = ({ selectedDate, mutateLogs }: { selectedDate: Date, mutateLogs: () => void }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -141,13 +167,20 @@ const AddExerciseLogDialog = ({ selectedDate, onLogAdded }: { selectedDate: Date
     setIsSubmitting(true);
     setError(null);
 
+    const guestId = localStorage.getItem('guestId');
+    if (!guestId) {
+        setError("Guest ID not found. Cannot save log.");
+        setIsSubmitting(false);
+        return;
+    }
+
     const logData: Partial<ExerciseLog> = {
       date: format(selectedDate, 'yyyy-MM-dd'),
       name: formData.name,
-      type: formData.type as ExerciseLog['type'],
-      duration: Number(formData.duration) || 0,
-      intensity: formData.intensity as ExerciseLog['intensity'],
-      caloriesBurned: Number(formData.caloriesBurned) || 0,
+      type: formData.type as ExerciseLog['type'] || undefined,
+      duration: Number(formData.duration) || undefined,
+      intensity: formData.intensity as ExerciseLog['intensity'] || undefined,
+      caloriesBurned: Number(formData.caloriesBurned) || undefined,
       strengthDetails: formData.type === 'strength' ? {
         sets: Number(formData.sets) || undefined,
         reps: Number(formData.reps) || undefined,
@@ -157,6 +190,7 @@ const AddExerciseLogDialog = ({ selectedDate, onLogAdded }: { selectedDate: Date
         distance: Number(formData.distance) || undefined,
         pace: Number(formData.pace) || undefined,
       } : undefined,
+      source: 'user-input',
     };
 
     // Basic Validation
@@ -169,19 +203,22 @@ const AddExerciseLogDialog = ({ selectedDate, onLogAdded }: { selectedDate: Date
     try {
       const response = await fetch('/api/exercise-logs', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Guest-ID': guestId, // Include guest ID header
+        },
         body: JSON.stringify(logData),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
 
       // Reset form and close dialog on success
       setFormData({ name: '', type: '', duration: '', intensity: '', caloriesBurned: '', sets: '', reps: '', weight: '', distance: '', pace: '' });
       setIsOpen(false);
-      onLogAdded(); // Callback to refresh the log list
+      mutateLogs(); // Trigger SWR revalidation
 
     } catch (err: any) {
       console.error("Failed to submit exercise log:", err);
@@ -302,45 +339,24 @@ const AddExerciseLogDialog = ({ selectedDate, onLogAdded }: { selectedDate: Date
 // --- Main Page Component ---
 export default function ExerciseLogsPage() {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
-  const [logs, setLogs] = useState<ExerciseLog[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [guestId, setGuestId] = useState<string | null>(null);
+
+  // Get guestId from localStorage on component mount (client-side only)
+   useEffect(() => {
+    const storedGuestId = localStorage.getItem('guestId');
+    setGuestId(storedGuestId);
+  }, []);
 
   const formattedDate = useMemo(() => {
-    return selectedDate ? format(selectedDate, 'yyyy-MM-dd') : '';
+    return selectedDate ? format(selectedDate, 'yyyy-MM-dd') : null;
   }, [selectedDate]);
 
- const fetchLogs = async (dateToFetch: string) => {
-      if (!dateToFetch) return;
-      setIsLoading(true);
-      setError(null);
-      try {
-        const response = await fetch(`/api/exercise-logs?date=${dateToFetch}`);
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-        }
-        const data: ExerciseLog[] = await response.json();
-        setLogs(data);
-      } catch (err: any) {
-        console.error("Failed to fetch exercise logs:", err);
-        setError(`Failed to load logs: ${err.message}`);
-        setLogs([]); // Clear logs on error
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  // Use SWR to fetch logs for the selected date
+  const swrKey = guestId && formattedDate ? `/api/exercise-logs?date=${formattedDate}` : null;
+  const { data: logs, error, isLoading, mutate: mutateLogs } = useSWR<ExerciseLog[]>(swrKey, fetcher);
 
-  // Fetch logs when the selected date changes
-  useEffect(() => {
-    fetchLogs(formattedDate);
-  }, [formattedDate]);
-
-  // Callback passed to the dialog to refresh logs after adding
-  const handleLogAdded = () => {
-     console.log("Log added, re-fetching...");
-     fetchLogs(formattedDate); // Re-fetch logs for the current date
-  }
+  // Determine display error
+  const displayError = error ? (error.message || "Failed to load logs.") : null;
 
   return (
     <div className="container mx-auto p-4">
@@ -371,17 +387,21 @@ export default function ExerciseLogsPage() {
            </PopoverContent>
          </Popover>
 
-         {/* Add Log Dialog Trigger */}
-         <AddExerciseLogDialog selectedDate={selectedDate || new Date()} onLogAdded={handleLogAdded} />
+         {/* Add Log Dialog Trigger - Pass mutateLogs */}
+         <AddExerciseLogDialog selectedDate={selectedDate || new Date()} mutateLogs={mutateLogs} />
       </div>
 
 
       {/* Loading and Error States */}
       {isLoading && <p className="text-center py-4">Loading logs...</p>}
-      {error && <p className="text-red-500 text-center py-4">{error}</p>}
+      {displayError && !isLoading && <p className="text-red-500 text-center py-4">{displayError}</p>}
+      {!guestId && !isLoading && <p className="text-orange-500 text-center py-4">Guest ID not found. Cannot load or save logs.</p>}
+
 
       {/* Display Logs Table */}
-      {!isLoading && !error && <ExerciseLogTable logs={logs} />}
+      {!isLoading && !displayError && logs && <ExerciseLogTable logs={logs} />}
+      {!isLoading && !displayError && !logs && swrKey && <p className="text-center py-4">No logs found for this date.</p>}
+
 
     </div>
   );

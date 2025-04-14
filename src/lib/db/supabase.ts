@@ -107,6 +107,80 @@ export async function saveGuestProfile(guestId: string, profileData: Partial<Use
   }
 }
 
+/**
+ * Updates an existing user's profile data in the 'profiles' table.
+ * @param userId - The ID of the user whose profile to update.
+ * @param profileData - The partial profile data containing fields to update.
+ * @returns The updated user profile object or null if not found or error.
+ */
+export async function updateUserProfile(userId: string, profileData: Partial<UserProfile>): Promise<UserProfile | null> {
+  console.log(`[updateUserProfile] Attempting to update profile for userId: ${userId}`);
+
+  // Map frontend data (camelCase, partial) to DB schema (snake_case)
+  // Only include fields present in profileData
+  const dbUpdateData: { [key: string]: any } = {};
+  if (profileData.name !== undefined) dbUpdateData.name = profileData.name;
+  if (profileData.age !== undefined) dbUpdateData.age = profileData.age;
+  if (profileData.gender !== undefined) dbUpdateData.gender = profileData.gender;
+  if (profileData.height !== undefined) dbUpdateData.height = profileData.height;
+  if (profileData.weight !== undefined) dbUpdateData.weight = profileData.weight;
+  if (profileData.activityLevel !== undefined) dbUpdateData.activity_level = profileData.activityLevel;
+  if (profileData.goal !== undefined) dbUpdateData.goal = profileData.goal;
+  if (profileData.dietaryPreferences !== undefined) dbUpdateData.dietary_preferences = profileData.dietaryPreferences;
+  if (profileData.macroTargets !== undefined) dbUpdateData.macro_targets = profileData.macroTargets;
+  if (profileData.preferences !== undefined) dbUpdateData.preferences = profileData.preferences;
+  // We explicitly don't update email or id here.
+  // updated_at should be handled by Supabase trigger if configured.
+
+  // Check if there's anything to update
+  if (Object.keys(dbUpdateData).length === 0) {
+    console.log(`[updateUserProfile] No fields provided to update for userId: ${userId}. Fetching current profile.`);
+    // If no data to update, just return the current profile
+    return getUserProfile(userId);
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(dbUpdateData)
+      .eq('id', userId)
+      .select() // Select the updated row
+      .single(); // Expect exactly one row to be updated and returned
+
+    if (error) {
+      console.error(`[updateUserProfile] Error updating profile for userId ${userId}:`, error.message);
+      // Handle specific errors, e.g., profile not found (error.code === 'PGRST116' maybe?)
+      return null;
+    }
+
+    console.log(`[updateUserProfile] Profile updated successfully for userId: ${userId}`);
+    // Map the returned snake_case data back to camelCase UserProfile
+    // Note: This assumes the select() returns all columns needed for UserProfile
+    const updatedProfile: UserProfile = {
+        id: data.id,
+        email: data.email,
+        name: data.name,
+        age: data.age,
+        gender: data.gender,
+        height: data.height,
+        weight: data.weight,
+        activityLevel: data.activity_level,
+        goal: data.goal,
+        dietaryPreferences: data.dietary_preferences,
+        macroTargets: data.macro_targets,
+        preferences: data.preferences,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+        // bmr and tdee are calculated, not stored
+    };
+    return updatedProfile;
+
+  } catch (err) {
+    console.error('[updateUserProfile] Unexpected error:', err);
+    return null;
+  }
+}
+
 
 /**
  * Logs a user interaction to the 'interaction_logs' table.
