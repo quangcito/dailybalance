@@ -59,13 +59,13 @@ graph TD
     ConversationLayer -- "API Call" --> OpenAI_API
 
     %% Styling
-    classDef frontend fill:#f9f,stroke:#333,stroke-width:2px;
-    classDef backend fill:#ccf,stroke:#333,stroke-width:2px;
-    classDef orchestrator fill:#dde,stroke:#555,stroke-width:1px; %% This style is defined but not explicitly used on a single node now
-    classDef database fill:#cfc,stroke:#333,stroke-width:2px;
-    classDef cache fill:#ffc,stroke:#333,stroke-width:2px;
-    classDef external fill:#fcc,stroke:#333,stroke-width:2px;
-    classDef llm_layer fill:#eef,stroke:#777,stroke-width:1px;
+    classDef frontend fill:#f9f,stroke:#333,stroke-width:2px,color:#000;
+    classDef backend fill:#ccf,stroke:#333,stroke-width:2px,color:#000;
+    classDef orchestrator fill:#dde,stroke:#555,stroke-width:1px,color:#000; %% This style is defined but not explicitly used on a single node now
+    classDef database fill:#cfc,stroke:#333,stroke-width:2px,color:#000;
+    classDef cache fill:#ffc,stroke:#333,stroke-width:2px,color:#000;
+    classDef external fill:#fcc,stroke:#333,stroke-width:2px,color:#000;
+    classDef llm_layer fill:#eef,stroke:#777,stroke-width:1px,color:#000;
 
 
     class Browser frontend;
