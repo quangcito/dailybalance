@@ -14,7 +14,7 @@ interface QueryInputProps {
 const QueryInput: React.FC<QueryInputProps> = ({
   onSubmit,
   disabled = false,
-  placeholder = "Ask anything about your day...",
+  placeholder = "Log meals/workouts, check your balance, or ask for recommendations...",
 }) => {
   const [query, setQuery] = useState('');
 

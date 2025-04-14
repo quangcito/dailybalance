@@ -58,11 +58,13 @@ const handleProfileUpdate = async (guestId: string, profileData: Partial<UserPro
 
 export default function ProfilePage() {
   const [guestId, setGuestId] = useState<string | null>(null);
+  const [isGuestIdChecked, setIsGuestIdChecked] = useState<boolean>(false); // State to track if localStorage check is done
 
   // Get guestId from localStorage on component mount (client-side only)
   useEffect(() => {
     const storedGuestId = localStorage.getItem('guestId');
     setGuestId(storedGuestId);
+    setIsGuestIdChecked(true); // Mark check as complete
   }, []);
 
   // Use SWR to fetch profile data - only fetch if guestId is available
@@ -81,7 +83,10 @@ export default function ProfilePage() {
 
   // Effect to update form state when profile data is fetched/updated
   useEffect(() => {
+    console.log("[ProfilePage Effect] Profile data received:", profile); // Log received profile
     if (profile) {
+      console.log("[ProfilePage Effect] Setting activityLevel:", profile.activityLevel); // Log value being set
+      console.log("[ProfilePage Effect] Setting goal:", profile.goal); // Log value being set
       setActivityLevel(profile.activityLevel);
       setGoal(profile.goal);
     }
@@ -132,11 +137,17 @@ export default function ProfilePage() {
     <div className="container mx-auto p-4 md:p-6 lg:p-8">
       <h1 className="text-3xl font-bold mb-6">Profile</h1>
 
-      {isLoading && <p>Loading profile...</p>}
-      {displayError && !isLoading && <p className="text-red-500 mb-4">{displayError}</p>}
-      {!guestId && !isLoading && <p className="text-orange-500 mb-4">Guest ID not found. Please ensure you have started a session.</p>}
+      {/* Combined Loading State */}
+      {(!isGuestIdChecked || isLoading) && <p>Loading profile...</p>}
 
-      {profile && !isLoading && !displayError && (
+      {/* Error State (only show if not loading) */}
+      {isGuestIdChecked && !isLoading && displayError && <p className="text-red-500 mb-4">{displayError}</p>}
+
+      {/* Guest ID Not Found State (only show if checked, not loading, and no guestId) */}
+      {isGuestIdChecked && !isLoading && !guestId && <p className="text-orange-500 mb-4">Guest ID not found. Please ensure you have started a session.</p>}
+
+      {/* Profile Display State (only show if checked, guestId exists, profile loaded, no error, not loading) */}
+      {isGuestIdChecked && guestId && profile && !isLoading && !displayError && (
         <form onSubmit={handleSubmit}>
           <Card>
             <CardHeader>
@@ -175,7 +186,8 @@ export default function ProfilePage() {
                 <div className="space-y-2">
                   <Label htmlFor="activityLevel">Activity Level</Label>
                   <Select
-                    value={activityLevel}
+                    key={`activity-${activityLevel}`} // Add key based on state
+                    value={activityLevel} // Bind back to local state
                     onValueChange={(value) => setActivityLevel(value as ActivityLevel)}
                     disabled={isSubmitting}
                   >
@@ -194,7 +206,8 @@ export default function ProfilePage() {
                 <div className="space-y-2">
                   <Label htmlFor="goal">Weight Goal</Label>
                    <Select
-                    value={goal}
+                    key={`goal-${goal}`} // Add key based on state
+                    value={goal} // Bind back to local state
                     onValueChange={(value) => setGoal(value as Goal)}
                     disabled={isSubmitting}
                   >
@@ -218,7 +231,7 @@ export default function ProfilePage() {
                     {submitSuccess && <p className="text-sm text-green-600">Profile updated successfully!</p>}
                     {submitError && <p className="text-sm text-red-500">{submitError}</p>}
                 </div>
-               <Button type="submit" disabled={isSubmitting || !guestId}>
+               <Button type="button" onClick={handleSubmit} disabled={isSubmitting || !guestId}>
                 {isSubmitting ? 'Saving...' : 'Save Changes'}
               </Button>
             </CardFooter>

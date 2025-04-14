@@ -872,6 +872,7 @@ workflow.addNode("runKnowledgeLayer", runKnowledgeLayer as any);
 workflow.addNode("runReasoningLayer", runReasoningLayer as any);
 workflow.addNode("enrichAgenticLogIntents", enrichAgenticLogIntents as any); // Ensure this node is added
 workflow.addNode("saveAgenticLogs", saveAgenticLogs as any);
+workflow.addNode("refetchDailyContextAfterSave", fetchDailyContext as any); // NEW node name for the second fetch
 // Ensure calculateDailyCaloriesNode is removed from node additions
 workflow.addNode("runConversationLayer", runConversationLayer as any);
 
@@ -898,13 +899,16 @@ workflow.addConditionalEdges(
 
 workflow.addEdge("fetchUserData" as any, "retrieveHistoricalContext" as any); // After fetch -> Retrieve History
 // Both paths (with or without fetchUserData) converge at retrieveHistoricalContext
-workflow.addEdge("retrieveHistoricalContext" as any, "calculateNetCalories" as any); // After Retrieve History -> Calculate Net Calories
-workflow.addEdge("calculateNetCalories" as any, "runKnowledgeLayer" as any); // After Calculate Net Calories -> Knowledge
+workflow.addEdge("retrieveHistoricalContext" as any, "runKnowledgeLayer" as any); // After Retrieve History -> Knowledge (Moved Net Calcs)
+// workflow.addEdge("calculateNetCalories" as any, "runKnowledgeLayer" as any); // Removed old edge
 // Note: runKnowledgeLayer edge remains the same (doesn't directly depend on date yet)
 workflow.addEdge("runKnowledgeLayer" as any, "runReasoningLayer" as any); // Knowledge -> Reasoning
 workflow.addEdge("runReasoningLayer" as any, "enrichAgenticLogIntents" as any); // Reasoning -> Enrich Intents
 workflow.addEdge("enrichAgenticLogIntents" as any, "saveAgenticLogs" as any); // Enrich Intents -> Save Logs
-workflow.addEdge("saveAgenticLogs" as any, "runConversationLayer" as any); // Save Logs -> Conversation
+workflow.addEdge("saveAgenticLogs" as any, "refetchDailyContextAfterSave" as any); // Save Logs -> NEW Re-fetch Node
+// workflow.addEdge("fetchDailyContext" as any, "calculateNetCalories" as any); // REMOVE incorrect edge from previous attempt
+workflow.addEdge("refetchDailyContextAfterSave" as any, "calculateNetCalories" as any); // NEW Re-fetch Node -> Calculate Net Calories
+workflow.addEdge("calculateNetCalories" as any, "runConversationLayer" as any); // Calculate Net Calories -> Conversation
 workflow.addEdge("runConversationLayer" as any, END); // Conversation -> End
 
 // Compile the graph

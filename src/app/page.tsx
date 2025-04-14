@@ -77,7 +77,7 @@ const GuestOnboardingDialog = ({ open, onOpenChange, onSubmit }: { open: boolean
       },
       preferences: { // New object structure
           units: 'metric', // Default value
-          theme: 'system', // Default value
+          theme: 'light', // Default value set to light
           notifications: true, // Default value
       },
     });
@@ -189,15 +189,15 @@ const GuestOnboardingDialog = ({ open, onOpenChange, onSubmit }: { open: boolean
                         This helps us personalize your experience. Fill in what you're comfortable with.
                     </DialogDescription>
                 </DialogHeader>
-                <form onSubmit={handleFormSubmit} className="space-y-4 py-4">
+                <form onSubmit={handleFormSubmit} className="space-y-6 py-4"> {/* Increased space between sections */}
                     {/* Basic Info */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                            <Label htmlFor="age">Age</Label>
+                            <Label htmlFor="age" className="mb-1 block">Age</Label> {/* Added margin */}
                             <Input id="age" name="age" type="number" value={formData.age ?? ''} onChange={handleChange} required />
                         </div>
                         <div>
-                            <Label htmlFor="gender">Gender</Label>
+                            <Label htmlFor="gender" className="mb-1 block">Gender</Label> {/* Added margin */}
                             <Select name="gender" value={formData.gender ?? ''} onValueChange={handleSelectChange('gender')} required>
                                 <SelectTrigger id="gender">
                                     <SelectValue placeholder="Select..." />
@@ -215,11 +215,11 @@ const GuestOnboardingDialog = ({ open, onOpenChange, onSubmit }: { open: boolean
                     {/* Physical Stats */}
                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                            <Label htmlFor="height">Height (cm)</Label>
+                            <Label htmlFor="height" className="mb-1 block">Height (cm)</Label> {/* Added margin */}
                             <Input id="height" name="height" type="number" value={formData.height ?? ''} onChange={handleChange} />
                         </div>
                         <div>
-                            <Label htmlFor="weight">Weight (kg)</Label>
+                            <Label htmlFor="weight" className="mb-1 block">Weight (kg)</Label> {/* Added margin */}
                             <Input id="weight" name="weight" type="number" value={formData.weight ?? ''} onChange={handleChange} />
                         </div>
                     </div>
@@ -227,7 +227,7 @@ const GuestOnboardingDialog = ({ open, onOpenChange, onSubmit }: { open: boolean
                     {/* Activity & Goal */}
                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                            <Label htmlFor="activityLevel">Activity Level</Label>
+                            <Label htmlFor="activityLevel" className="mb-1 block">Activity Level</Label> {/* Added margin */}
                             <Select name="activityLevel" value={formData.activityLevel ?? ''} onValueChange={handleSelectChange('activityLevel')} required>
                                 <SelectTrigger id="activityLevel">
                                     <SelectValue placeholder="Select..." />
@@ -242,18 +242,17 @@ const GuestOnboardingDialog = ({ open, onOpenChange, onSubmit }: { open: boolean
                             </Select>
                         </div>
                         <div>
-                            <Label htmlFor="goal">Primary Goal</Label>
+                            <Label htmlFor="goal" className="mb-1 block">Primary Goal</Label> {/* Added margin */}
                             <Select name="goal" value={formData.goal ?? ''} onValueChange={handleSelectChange('goal')} required>
                                 <SelectTrigger id="goal">
                                     <SelectValue placeholder="Select..." />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="Weight Loss">Weight Loss</SelectItem>
-                                    <SelectItem value="Weight Gain">Weight Gain</SelectItem>
-                                    <SelectItem value="Maintenance">Maintenance</SelectItem>
-                                    <SelectItem value="Improve Fitness">Improve Fitness</SelectItem>
-                                    <SelectItem value="Build Muscle">Build Muscle</SelectItem>
-                                    <SelectItem value="Eat Healthier">Eat Healthier</SelectItem>
+                                    <SelectItem value="weight-loss">Weight Loss</SelectItem>
+                                    <SelectItem value="maintenance">Maintenance</SelectItem>
+                                    <SelectItem value="muscle-gain">Build Muscle</SelectItem>
+                                    <SelectItem value="performance">Improve Fitness</SelectItem>
+                                    <SelectItem value="general-health">Eat Healthier</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
@@ -261,7 +260,7 @@ const GuestOnboardingDialog = ({ open, onOpenChange, onSubmit }: { open: boolean
 
                     {/* Dietary Preferences Checkboxes */}
                     <div>
-                        <Label className="block mb-2">Dietary Preferences</Label>
+                        <Label className="block mb-2">Dietary Preferences</Label> {/* Restored bottom margin */}
                         <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                             <div className="flex items-center space-x-2">
                                 <Checkbox id="isVegetarian" name="dietaryPreferences.isVegetarian" checked={formData.dietaryPreferences?.isVegetarian ?? false} onCheckedChange={handleCheckboxChange('dietaryPreferences.isVegetarian')} />
@@ -284,32 +283,32 @@ const GuestOnboardingDialog = ({ open, onOpenChange, onSubmit }: { open: boolean
 
                     {/* Dietary Preferences Text Inputs */}
                     <div>
-                        <Label htmlFor="allergiesStr">Allergies (comma-separated)</Label>
-                        <Input id="allergiesStr" name="allergiesStr" value={formData.allergiesStr ?? ''} onChange={handleChange} />
+                        <Label htmlFor="allergiesStr" className="mb-1 block">Allergies (comma-separated)</Label> {/* Added margin */}
+                        <Input id="allergiesStr" name="allergiesStr" value={formData.allergiesStr ?? ''} onChange={handleChange} /> {/* Removed top margin */}
                     </div>
                     <div>
-                        <Label htmlFor="avoidedFoodsStr">Foods to Avoid (comma-separated)</Label>
-                        <Input id="avoidedFoodsStr" name="avoidedFoodsStr" value={formData.avoidedFoodsStr ?? ''} onChange={handleChange} />
+                        <Label htmlFor="avoidedFoodsStr" className="mb-1 block">Foods to Avoid (comma-separated)</Label> {/* Added margin */}
+                        <Input id="avoidedFoodsStr" name="avoidedFoodsStr" value={formData.avoidedFoodsStr ?? ''} onChange={handleChange} /> {/* Removed top margin */}
                     </div>
                     <div>
-                        <Label htmlFor="preferredFoodsStr">Preferred Foods (comma-separated)</Label>
-                        <Input id="preferredFoodsStr" name="preferredFoodsStr" value={formData.preferredFoodsStr ?? ''} onChange={handleChange} />
+                        <Label htmlFor="preferredFoodsStr" className="mb-1 block">Preferred Foods (comma-separated)</Label> {/* Added margin */}
+                        <Input id="preferredFoodsStr" name="preferredFoodsStr" value={formData.preferredFoodsStr ?? ''} onChange={handleChange} /> {/* Removed top margin */}
                     </div>
 
                     {/* Macro Targets */}
                     <div>
-                        <Label className="block mb-2">Macro Targets (%)</Label>
+                        <Label className="block mb-2">Macro Targets (%)</Label> {/* Restored bottom margin */}
                         <div className="grid grid-cols-3 gap-4">
                             <div>
-                                <Label htmlFor="macroTargets.protein" className="text-xs text-muted-foreground">Protein</Label>
+                                <Label htmlFor="macroTargets.protein" className="text-xs text-muted-foreground mb-1 block">Protein</Label> {/* Added margin */}
                                 <Input id="macroTargets.protein" name="macroTargets.protein" type="number" value={formData.macroTargets?.protein ?? 0} onChange={handleChange} min="0" max="100" />
                             </div>
                             <div>
-                                <Label htmlFor="macroTargets.carbs" className="text-xs text-muted-foreground">Carbs</Label>
+                                <Label htmlFor="macroTargets.carbs" className="text-xs text-muted-foreground mb-1 block">Carbs</Label> {/* Added margin */}
                                 <Input id="macroTargets.carbs" name="macroTargets.carbs" type="number" value={formData.macroTargets?.carbs ?? 0} onChange={handleChange} min="0" max="100" />
                             </div>
                             <div>
-                                <Label htmlFor="macroTargets.fat" className="text-xs text-muted-foreground">Fat</Label>
+                                <Label htmlFor="macroTargets.fat" className="text-xs text-muted-foreground mb-1 block">Fat</Label> {/* Added margin */}
                                 <Input id="macroTargets.fat" name="macroTargets.fat" type="number" value={formData.macroTargets?.fat ?? 0} onChange={handleChange} min="0" max="100" />
                             </div>
                         </div>
@@ -318,10 +317,10 @@ const GuestOnboardingDialog = ({ open, onOpenChange, onSubmit }: { open: boolean
 
                     {/* App Preferences */}
                     <div>
-                        <Label className="block mb-2">App Preferences</Label>
+                        <Label className="block mb-2">App Preferences</Label> {/* Restored bottom margin */}
                         <div className="space-y-3">
                             <div>
-                                <Label htmlFor="preferences.units" className="text-xs text-muted-foreground">Units</Label>
+                                <Label htmlFor="preferences.units" className="text-xs text-muted-foreground mb-1 block">Units</Label> {/* Added margin */}
                                 <Select name="preferences.units" value={formData.preferences?.units ?? 'metric'} onValueChange={handleSelectChange('preferences.units')}>
                                     <SelectTrigger id="preferences.units">
                                         <SelectValue />
@@ -333,15 +332,15 @@ const GuestOnboardingDialog = ({ open, onOpenChange, onSubmit }: { open: boolean
                                 </Select>
                             </div>
                             <div>
-                                <Label htmlFor="preferences.theme" className="text-xs text-muted-foreground">Theme</Label>
+                                <Label htmlFor="preferences.theme" className="text-xs text-muted-foreground mb-1 block">Theme</Label> {/* Added margin */}
                                 <Select name="preferences.theme" value={formData.preferences?.theme ?? 'system'} onValueChange={handleSelectChange('preferences.theme')}>
                                     <SelectTrigger id="preferences.theme">
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="light">Light</SelectItem>
-                                        <SelectItem value="dark">Dark</SelectItem>
-                                        <SelectItem value="system">System Default</SelectItem>
+                                        <SelectItem value="dark" disabled>Dark (coming soon)</SelectItem>
+                                        <SelectItem value="system" disabled>System Default (coming soon)</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -359,6 +358,34 @@ const GuestOnboardingDialog = ({ open, onOpenChange, onSubmit }: { open: boolean
             </DialogContent>
         </Dialog>
     );
+};
+
+// Helper function to get the welcome message (placed outside the component)
+const getWelcomeMessage = (): SystemMessage | null => {
+  const currentHour = new Date().getHours();
+  let greeting = "";
+
+  if (currentHour >= 5 && currentHour < 12) { // Morning 5 AM - 11:59 AM
+    greeting = "Good morning! Ask me for breakfast ideas based on your goals, or tell me what you ate.";
+  } else if (currentHour >= 12 && currentHour < 17) { // Afternoon 12 PM - 4:59 PM
+    greeting = "Good afternoon! Need a healthy lunch suggestion, or want to log your workout?";
+  } else { // Evening 5 PM - 4:59 AM (covers 5 PM to midnight and midnight to 4:59 AM)
+    greeting = "Good evening! Ready to log dinner? Ask me for a summary of your day's balance.";
+  }
+
+  if (greeting) {
+    // Construct a simple SystemMessage structure
+    return {
+      role: 'system',
+      answer: {
+        text: greeting, // Use the 'text' field as defined in StructuredAnswer
+        suggestions: [], // Keep optional fields empty/undefined if not needed
+      },
+      sources: [], // No sources for static message
+      timestamp: new Date().toISOString(),
+    };
+  }
+  return null;
 };
 
 
@@ -431,12 +458,35 @@ export default function Home() { // Remove explicit JSX.Element return type for 
             throw new Error(`Failed to fetch history: ${errorDetails}`);
           }
           const historyMessages: ConversationMessage[] = await response.json();
+          let initialMessages: ConversationMessage[] = []; // Initialize as empty array
+
           if (Array.isArray(historyMessages)) {
              console.log(`[History Fetch] Received ${historyMessages.length} messages.`);
-             setMessages(historyMessages); // Set initial messages from history
+             initialMessages = historyMessages; // Start with fetched history
+
+             // Check if history is empty and onboarding is done, then add welcome message
+             if (historyMessages.length === 0 && !showOnboarding) {
+               const welcomeMsg = getWelcomeMessage();
+               if (welcomeMsg) {
+                 console.log("[Welcome Message] Prepending time-based welcome message.");
+                 initialMessages = [welcomeMsg, ...historyMessages]; // Prepend welcome message
+               }
+             }
+             setMessages(initialMessages); // Set initial messages (potentially including welcome)
           } else {
              console.warn("[History Fetch] Received non-array data:", historyMessages);
-             setMessages([]); // Set empty if data is invalid
+             // Still check if we should add welcome message even if history fetch failed/returned invalid data
+             if (!showOnboarding) {
+                const welcomeMsg = getWelcomeMessage();
+                if (welcomeMsg) {
+                    console.log("[Welcome Message] Adding welcome message on invalid history fetch.");
+                    setMessages([welcomeMsg]);
+                } else {
+                    setMessages([]); // Set empty if no welcome message either
+                }
+             } else {
+                setMessages([]); // Set empty if onboarding or invalid data without welcome message
+             }
           }
         } catch (error) {
           console.error("[History Fetch] Error fetching initial chat history:", error);
@@ -449,7 +499,7 @@ export default function Home() { // Remove explicit JSX.Element return type for 
     if (!showOnboarding && guestId && messages.length === 0) {
        fetchAndSetHistory();
     }
-  }, [guestId, showOnboarding]); // Dependencies: guestId, showOnboarding
+  }, [guestId, showOnboarding, messages.length]); // Dependencies: guestId, showOnboarding, messages.length (to prevent re-adding welcome)
 
   // Effect to scroll to bottom when messages change or loading starts/stops
   useEffect(() => {
@@ -470,7 +520,7 @@ export default function Home() { // Remove explicit JSX.Element return type for 
       // Now, try to save the profile to the backend
       try {
         console.log(`[handleGuestProfileSubmit] Attempting to save profile to backend for guestId: ${newGuestId}`);
-        const response = await fetch('/api/guest-profile', { // Assuming this endpoint exists
+        const response = await fetch('/api/profile', { // Assuming this endpoint exists
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -585,7 +635,7 @@ export default function Home() { // Remove explicit JSX.Element return type for 
       />
 
       {/* Main Chat Area */}
-      <main className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8"> {/* Increased main spacing */}
+      <main className="flex-1 overflow-y-auto px-6 md:px-8 pt-6 md:pt-8 pb-0 space-y-8"> {/* Adjusted padding: Removed bottom padding */}
         {Array.from(groupedMessages.entries()).map((entry: [string, ConversationMessage[]], mapIndex: number) => {
           const [dateString, messagesForDate] = entry;
           return ( // Add return statement
@@ -616,14 +666,13 @@ export default function Home() { // Remove explicit JSX.Element return type for 
 
                  {/* Message Content */}
                  <Card className={cn('max-w-xl shadow-sm', msg.role === 'user' ? 'bg-primary text-primary-foreground' : '')}>
-                   <CardContent className="p-3"> {/* Adjusted padding */}
+                   <CardContent className="px-4 py-0"> {/* Refined padding for chat bubble look */}
                      {msg.role === 'user' ? (
                        <p className="text-sm">{msg.query}</p>
                      ) : (
-                       // Pass theme context if AnswerCard needs it, otherwise remove prop
                        <AnswerCard answer={msg.answer} sources={msg.sources} />
                      )}
-                     <p className="text-xs text-right opacity-70 mt-2"> {/* Slightly increased margin and opacity */}
+                     <p className="text-xs text-right opacity-70 mt-2">
                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
                      </p>
                    </CardContent>
@@ -666,7 +715,7 @@ export default function Home() { // Remove explicit JSX.Element return type for 
          )}
 
          {/* Scroll Anchor */}
-         <div ref={messagesEndRef} />
+         <div ref={messagesEndRef} className="h-0 mt-0" />
       </main>
 
       {/* Input Area - Sticky Footer */}

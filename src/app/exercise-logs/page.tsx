@@ -338,7 +338,12 @@ const AddExerciseLogDialog = ({ selectedDate, mutateLogs }: { selectedDate: Date
 
 // --- Main Page Component ---
 export default function ExerciseLogsPage() {
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
+  // Initialize date to the START of the current day in the local timezone
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Set time to 00:00:00.000 locally
+    return today;
+  });
   const [guestId, setGuestId] = useState<string | null>(null);
 
   // Get guestId from localStorage on component mount (client-side only)

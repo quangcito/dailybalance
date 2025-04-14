@@ -42,7 +42,25 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
     }
     // Note: Casting to UserProfile. Assumes DB schema aligns.
     // Adjust mapping if needed.
-    return data as UserProfile;
+    // Map snake_case DB columns to camelCase UserProfile fields
+    const mappedProfile: UserProfile = {
+        id: data.id,
+        email: data.email,
+        name: data.name,
+        age: data.age,
+        gender: data.gender,
+        height: data.height,
+        weight: data.weight,
+        activityLevel: data.activity_level, // Map activity_level
+        goal: data.goal,                   // Map goal
+        dietaryPreferences: data.dietary_preferences,
+        macroTargets: data.macro_targets,
+        preferences: data.preferences,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+        // bmr and tdee are calculated later in the API route, not stored/mapped here
+    };
+    return mappedProfile;
   } catch (err) {
     console.error('Unexpected error in getUserProfile:', err);
     return null;
